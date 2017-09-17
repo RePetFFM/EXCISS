@@ -40,12 +40,6 @@ serialPort = '/dev/serial0'
 baudRate = 9600
 cmd = 0
 
-# configure the serial connections (the parameters differ on the device you are connecting to)
-ser = serial.Serial(
-    port=serialPort,
-    baudrate=baudRate
-)
-
 def sendSerialCommand():
   global serialPort
   global baudRate
@@ -53,6 +47,12 @@ def sendSerialCommand():
 
   try:
     logger.info("Start serial communication.")
+
+    # configure the serial connections (the parameters differ on the device you are connecting to)
+    ser = serial.Serial(
+      port=serialPort,
+      baudrate=baudRate
+    )
 
     ser.close() # close port in case it is still open
 
