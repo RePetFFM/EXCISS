@@ -11,7 +11,7 @@
 # https://raspberrypi.stackexchange.com/questions/45570/how-do-i-make-serial-work-on-the-raspberry-pi3
 #
 # run:
-# sudo sendSerialCmd.py -p theSerialCommand
+# sudo sendSerialCmd.py -s /dev/serial0 -b 9600 -c theSerialCommand
 
 import sys, getopt
 import logging
@@ -36,19 +36,23 @@ log_fileHandler.setFormatter(formatter)
 logger.addHandler(log_fileHandler)
 #########################LOGGING##########################
 
-parameter1 = 0
-
-# configure the serial connections (the parameters differ on the device you are connecting to)
-ser = serial.Serial(
-    port='/dev/serial0',
-    baudrate=9600
-)
+serialPort = '/dev/serial0'
+baudRate = 9600
+cmd = 0
 
 def sendSerialCommand():
-  global parameter1
+  global serialPort
+  global baudRate
+  global cmd
 
   try:
     logger.info("Start serial communication.")
+
+    # configure the serial connections (the parameters differ on the device you are connecting to)
+    ser = serial.Serial(
+      port=serialPort,
+      baudrate=baudRate
+    )
 
     ser.close() # close port in case it is still open
 
@@ -65,8 +69,8 @@ def sendSerialCommand():
 
     # send the character to the device
     # (note that I happend a \r\n carriage return and line feed to the characters - this is requested by my device)
-    logger.info("Sending to serial port: " + str(parameter1) + '\r\n')
-    ser.write(str(parameter1) + '\r\n')
+    logger.info("Sending to serial port: " + str(cmd) + '\r\n')
+    ser.write(str(cmd) + '\r\n')
 
     out = ''
     # let's wait one second before reading output (let's give device time to answer)
@@ -90,23 +94,33 @@ def main(argv):
   print 'Number of arguments:', len(sys.argv), 'arguments.'
   print 'Argument List:', str(sys.argv)
 
-  global parameter1
+  global serialPort
+  global baudRate
+  global cmd
   try:
     logger.info('Reading command line parameters')
-    opts, args = getopt.getopt(argv,"hp:",["parameter1="])
+    opts, args = getopt.getopt(argv,"hs:b:c:",["serialPort=", "baudRate=", "cmd="])
   except getopt.GetoptError:
-    print 'python ' + str(sys.argv[0]) + ' -p <parameter1>'
-    logger.error('python ' + str(sys.argv[0]) + ' -p <parameter1>')
+    print 'python ' + str(sys.argv[0]) + ' -s <serialPort> -b <baudRate> -c <cmd>'
+    logger.error('python ' + str(sys.argv[0]) + ' -s <serialPort> -b <baudRate> -c <cmd>')
     sys.exit(2)
   for opt, arg in opts:
     if opt == '-h':
-      print str(sys.argv[0]) + ' -p <parameter1>'
+      print str(sys.argv[0]) + ' -s <serialPort> -b <baudRate> -c <cmd>'
       sys.exit()
-    elif opt in ("-p", "--parameter1"):
-      parameter1 = str(arg)
+    elif opt in ("-s", "--serialPort"):
+      serialPort = str(arg)
+    elif opt in ("-b", "--baudRate"):
+      baudRate = int(arg)
+    elif opt in ("-c", "--cmd"):
+      cmd = str(arg)
 
-  print 'Parameter 1 is: ' + str(parameter1)
-  logger.info('Parameter 1 is: ' + str(parameter1))
+  print 'Serial port is: ' + str(serialPort)
+  logger.info('Serial port is: ' + str(serialPort))
+  print 'Baudrate is: ' + str(baudRate)
+  logger.info('Baudrate is: ' + str(baudRate))
+  print 'Command is: ' + str(cmd)
+  logger.info('Command is: ' + str(cmd))
 
   sendSerialCommand()
 
