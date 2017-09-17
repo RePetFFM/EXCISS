@@ -1,0 +1,7 @@
+
+# required for the python part
+
+# python 2.7
+
+sudo pip install pyserial
+
