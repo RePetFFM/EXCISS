@@ -45,16 +45,23 @@ mv /home/pi/EXCISS/exciss_python_master/python/*.h264 $DIRECTORY/
 mv /home/pi/EXCISS/exciss_python_master/python/*.txt $DIRECTORY/
 mv /home/pi/EXCISS/exciss_python_master/python/*.jpg $DIRECTORY/
 echo "start copying in background high frame rate video from USB Stick [main recording mass storage] to backup USB stick"
+sudo mount /dev/sdb1
+mv $DIRECTORY/* /dev/sdb1
+
 echo "start low frame rate recording / begin still timelaps with burst LED exposure on USB Stick [main recording mass storage]"
+# TODO
 echo "wait for 7 min"
 # TODO correct time
 sleep 7s #7m
 
 echo "turn off all LED's"
 echo "start copying low frame rate video from USB Stick [main recording mass storage] to backup USB stick"
-
+# TODO
 echo "Write health logfile to Transfer USB"
 # TODO
+
+# TODO preserve log files of various python scripts?
+# check directory /home/pi/log
 
 echo "unmount USB sticks"
 # TODO ???
