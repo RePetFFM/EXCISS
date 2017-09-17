@@ -2,7 +2,7 @@
 #include "RTClib.h"
 #include "exciss.h"
 #include "Adafruit_DRV2605.h"
-#include "elapsedMillis.h"
+#include "powermanager.h"
 
 
 // RTC
@@ -11,7 +11,6 @@ RTC_DS3231 rtc;
 
 // Globals for DRV2605_Haptic
 Adafruit_DRV2605 DRV2605_shaker;
-elapsedMillis time_Elapsed;
 unsigned long start_ms;
 int duration_ms;
 
@@ -42,13 +41,7 @@ void setup() {
 	DRV2605_shaker.selectLibrary(1);
 	DRV2605_shaker.useERM();
 
-
-	delay(500);
-	Serial.print("Config ok?: ");
-	Serial.println( set_Config_Drv("64_64_64_64_64_64_64"));
-	delay(500);
-	Serial.print("Run it for 5 secs ok?: ");
-	Serial.println(set_Run_Drv("5000"));
+	set_Config_Drv("64_64_64_64_64_64_64");
 }
 
 
@@ -162,6 +155,13 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 				Serial.println(tmpLong);
 			}
 		break;
+
+		case 's':
+			if(buf[1]=='c') { // set arc capcitor charg level
+				String str((const char*)&buf[2]);
+				set_Config_Drv(str); // example config "64_64_64_64_64_64_64"
+			}
+		break; 
 	}
 }
 
@@ -184,7 +184,9 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 		break;
 
 		case 'r':
-			Serial.println("raspberry power down requested");
+			if(buf[1]=='s') {
+				Serial.println("raspberry power down requested");
+			}
 		break;
 	}
 }
@@ -283,14 +285,6 @@ bool set_Config_Drv (String my_Config) {
 	} else return 0;
 }
 
-/*
- * Starts the DRV2605_shaker. Max 30 seconds. 
- */
-bool set_Run_Drv (String ms) {
-	start_ms = time_Elapsed; 
-	if (ms.toInt()<30000) {duration_ms = ms.toInt(); return 1;}
-	else {duration_ms = 0; return 0;}
-}
 
 
 // end: shaker driver DRV2605
