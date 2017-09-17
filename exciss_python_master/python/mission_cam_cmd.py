@@ -16,8 +16,8 @@
 # raspivid -md 4 -w 1640 -h 1232 -fps 40 -ex fixedfps -awb auto --segment 10000 -t 180000 -o DATE_TIME_40fps_seg%02d.h264
 #
 # run:
-# python moduleTemplate_mainMission_camera.py -x
-# python moduleTemplate_mainMission_camera.py -p 1 -q 2
+# python mission_cam_cmd.py -h
+# python mission_cam_cmd.py -c "raspivid ..."
 #
 #
 # Command line parameter doku:
