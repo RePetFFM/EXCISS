@@ -1,0 +1,2 @@
+#define POWERLED_FRONT 5
+#define POWERLED_BACK 6
