@@ -24,17 +24,18 @@
 # https://www.raspberrypi.org/documentation/raspbian/applications/camera.md
 #
 
-
-
 import sys, getopt
 import logging
 import os
 import datetime
 
 #########################LOGGING##########################
-# note: this folder has to exist
 # log file name is identical to the script name
-log_fileHandler = logging.FileHandler('/home/pi/log/'+ str(sys.argv[0]) +'.log')
+# ensure the log folder exists
+logDirectory = '/home/pi/log'
+if not os.path.exists(logDirectory):
+  os.makedirs(logDirectory)
+log_fileHandler = logging.FileHandler('/home/pi/log/mission_cam_cmd.log')
 
 # logging
 logger = logging.getLogger(str(sys.argv[0]))
@@ -63,7 +64,7 @@ def runTheMission():
     print "Date: " + strDate
     print "Time: " + strTime
 
-    print "Command before replacement"
+    print "Command BEFORE replacement"
     print cmd
 
     cmd = cmd.replace("DATE", strDate)
@@ -105,6 +106,8 @@ def main(argv):
     if opt == '-h':
       print str(sys.argv[0]) + ' -c <cmd>'
       sys.exit()
+    elif opt in ("-c", "--cmd"):
+      cmd = str(arg)
 
   logger.info('Parameter cmd is: ' + str(cmd))
 
