@@ -61,16 +61,16 @@ def runTheMission():
 
     # find the time in the form 21-57-22 (HH-MM-SS)
     strTime = str(now.strftime('%H-%M-%S'))
-    print "Date: " + strDate
-    print "Time: " + strTime
+    #print "Date: " + strDate
+    #print "Time: " + strTime
 
-    print "Command BEFORE replacement"
-    print cmd
+    #print "Command BEFORE replacement"
+    #print cmd
 
     cmd = cmd.replace("DATE", strDate)
     cmd = cmd.replace("TIME", strTime)
 
-    print "Command AFTER replace"
+    #print "Command AFTER replace"
     print cmd
 
     logger.info("Cmd: " + cmd)
@@ -80,6 +80,7 @@ def runTheMission():
     # we use the date and time from the beginning of the experiment for this
     strOutputTxtFilename = strDate + "_" + strTime + "_CmdLineOutput.txt"
     myFile = open(strOutputTxtFilename, 'w')
+    myFile.write("Command: " + cmd)
     myFile.write(ret)
     myFile.close()
 
@@ -90,8 +91,8 @@ def runTheMission():
 
 #########################MAIN##########################
 def main(argv):
-  print 'Number of arguments:', len(sys.argv), 'arguments.'
-  print 'Argument List:', str(sys.argv)
+  #print 'Number of arguments:', len(sys.argv), 'arguments.'
+  #print 'Argument List:', str(sys.argv)
 
   global cmd
 
