@@ -18,10 +18,14 @@
 
 import sys, getopt
 import logging
+import os
 
 #########################LOGGING##########################
-# note: this folder has to exist
 # log file name is identical to the script name
+# ensure the log folder exists
+logDirectory = '/home/pi/log'
+if not os.path.exists(logDirectory):
+  os.makedirs(logDirectory)
 log_fileHandler = logging.FileHandler('/home/pi/log/'+ str(sys.argv[0]) +'.log')
 
 # logging
