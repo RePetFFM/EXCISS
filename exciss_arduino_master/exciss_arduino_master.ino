@@ -147,6 +147,7 @@ void CORE__statemachine_init() {
 }
 
 void CORE__statemachine_main() {
+	/*
 	switch (CORE__main_state) {
 		case :
 		// do something
@@ -157,9 +158,11 @@ void CORE__statemachine_main() {
 		default:
 		// do something
 	}
+	*/
 }
 
 void CORE__statemachine_powermanagment() {
+	/*
 	switch (CORE__powermanagment_state) {
 		case :
 		// do something
@@ -170,6 +173,7 @@ void CORE__statemachine_powermanagment() {
 		default:
 		// do something
 	}
+	*/
 }
 
 // end: Core
