@@ -1,4 +1,6 @@
 #include <Wire.h>
+#include <EEPROM.h>
+#include <avr/wdt.h>
 #include "RTClib.h"
 #include "exciss.h"
 #include "Adafruit_DRV2605.h"
@@ -10,56 +12,190 @@ RTC_DS3231 rtc;
 
 
 // Globals for DRV2605_Haptic
-Adafruit_DRV2605 DRV2605_shaker;
-unsigned long start_ms;
-int duration_ms;
 
-uint8_t DRV2605_shaker_run = 0;
+Adafruit_DRV2605 DRV2605__shaker;
+String DRV2605__effect_sequence = "64_64_64_64_64_64_64";
+uint8_t DRV2605__shaker_run = 0;
+
+
 
 
 void setup() {
-	pinMode(POWERLED_FRONT, OUTPUT);
-	pinMode(POWERLED_BACK, OUTPUT);
+	wdt_enable(WDTO_8S); // set watchdog interval to 8 seconds
 
+	
+	CORE__init_pins();
+	
 
+	wdt_reset(); // reset watchdog timer
+}
+
+uint32_t CORE__init_done = CORE__INIT_EXECUTE; // 0xA5A5 = init run state, 0x5A5A = init done
+
+uint32_t CORE__init_state = CORE__INIT_STATE_SET_PWM_FREQ; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+
+uint32_t CORE__main_state = 0x00000000; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+
+uint32_t CORE__powermanagment_state = 0x00000000; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+
+void loop() {
+	if(CORE__init_done == CORE__INIT_EXECUTE) {
+		CORE__statemachine_init();
+	} 
+
+	if(CORE__init_done == CORE__INIT_DONE) {
+		SERIAL__Parser();
+
+		CORE__statemachine_main();
+
+		CORE__statemachine_powermanagment();
+
+		DRV2605__shaker_loop();
+	}
+
+	CORE_statemachine_state_index_validator();
+
+	wdt_reset(); // reset watchdog timer
+}
+
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+// begin: Core
+
+void CORE__init_pins() {
+	// left side
+	pinMode(CORE__PIN_DIN_RASPI_WATCHDOG, INPUT);
+	pinMode(CORE__PIN_DOUT_MOSFET_5V, OUTPUT);
+	pinMode(CORE__PIN_DOUT_MOSFET_8V, OUTPUT);
+	pinMode(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, OUTPUT);
+	pinMode(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, OUTPUT);
+	pinMode(CORE__PIN_PWM_POWERLED_FRONT, OUTPUT);
+
+	// right side
+	pinMode(CORE__PIN_DOUT_USB_SWITCH_SWITCH, OUTPUT);
+	pinMode(CORE__PIN_DOUT_BABYSITTER_SYSOFF, OUTPUT);
+	pinMode(CORE__PIN_DIN_BABYSITTER_PGOOD, INPUT);
+	pinMode(CORE__PIN_DIN_BABYSITTER_GPOUT, INPUT);
+	pinMode(CORE__PIN_PWM_POWERLED_BACK, OUTPUT);
+
+	// initial pin state
+	digitalWrite(CORE__PIN_DOUT_MOSFET_5V, LOW);
+	digitalWrite(CORE__PIN_DOUT_MOSFET_8V, LOW);
+	digitalWrite(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, LOW);
+	digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, LOW);
 	POWERLED_frontlight(0);
+
+	digitalWrite(CORE__PIN_DOUT_USB_SWITCH_SWITCH, USBSWITCH__SWITCH_TRANSFER);
+	digitalWrite(CORE__PIN_DOUT_BABYSITTER_SYSOFF, HIGH);
 	POWERLED_backlight(0);
+}
 
-	Serial.begin(9600);
 
-	Serial.println("ready");
+void CORE__init_value_after_powerup() {
+	DRV2605__init_if_required();
+}
 
+void CORE__init_i2c_components() {
 	if (! rtc.begin()) {
 		Serial.println("ERROR Couldn't find RTC");
 	} else {
 		Serial.println("rtc ready");
 	}
-
-	// Configuration for DRV2605_Haptic I2C trigger Modus
-	DRV2605_shaker.begin();
-	DRV2605_shaker.setMode(DRV2605_MODE_INTTRIG); // default, internal trigger when sending GO command
-	DRV2605_shaker.selectLibrary(1);
-	DRV2605_shaker.useERM();
-
-	set_Config_Drv("64_64_64_64_64_64_64");
 }
 
+char CORE__eeprom_raid_read_char(int address) {
+	char c1,c2,c3;
+	c1 = EEPROM.read(address);
+	c2 = EEPROM.read(address+1);
+	c3 = EEPROM.read(address+2);
+	if(c1==c2 && c2==c3) {
 
-void loop() {
-	SERIAL__Parser();
-
-	DRV2605_shaker_loop();
+	}
 }
 
+void CORE__eeprom_raid_write_char(int address,char value) {
+	EEPROM.update(address,value);
+	EEPROM.update(address+1,value);
+	EEPROM.update(address+2,value);
+}
 
+void CORE_statemachine_state_index_validator() {
+	// todo validate 
+
+	// CORE__init_state
+	// CORE__main_state
+	// CORE__statemachine_powermanagment
+}
+
+void CORE__statemachine_init() {
+	switch (CORE__init_state) {
+		case CORE__INIT_STATE_SET_PWM_FREQ:
+			// set higher pwm frequency for the leds to prevent flicker in video recording
+			TCCR1B = TCCR1B & 0b11111000 | 0x01; // 0x01 = 31250Hz/1, 0x02 = 31250Hz/8
+			CORE__init_state 	= CORE__INIT_STATE_SET_I2C_COMPONENT_TO_INIT_STATE;
+		break;
+		case CORE__INIT_STATE_SET_I2C_COMPONENT_TO_INIT_STATE:
+			CORE__init_i2c_components();
+			CORE__init_state 	= CORE__INIT_STATE_INIT_SERIAL;
+		break;
+		case CORE__INIT_STATE_INIT_SERIAL:
+			Serial.begin( UART_BAUTRATE );
+			CORE__init_state 	= CORE__INIT_STATE_END;
+			CORE__init_done 	= CORE__INIT_DONE;
+		break;
+	}
+}
+
+void CORE__statemachine_main() {
+	switch (CORE__main_state) {
+		case :
+		// do something
+		break;
+		case :
+		// do something
+		break;
+		default:
+		// do something
+	}
+}
+
+void CORE__statemachine_powermanagment() {
+	switch (CORE__powermanagment_state) {
+		case :
+		// do something
+		break;
+		case :
+		// do something
+		break;
+		default:
+		// do something
+	}
+}
+
+// end: Core
+//..............................................................
+//..............................................................
+
+
+
+
+
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+// begin: PowerLED
 
 void POWERLED_frontlight(int pwm_duty_circle) {
-	analogWrite(POWERLED_FRONT, pwm_duty_circle);
+	analogWrite(CORE__PIN_PWM_POWERLED_FRONT, pwm_duty_circle);
 }
 
 void POWERLED_backlight(int pwm_duty_circle) {
-	analogWrite(POWERLED_BACK, pwm_duty_circle);
+	analogWrite(CORE__PIN_PWM_POWERLED_BACK, pwm_duty_circle);
 }
+
+// end: PowerLED
+//..............................................................
+//..............................................................
+
 
 
 //--------------------------------------------------------------
@@ -157,9 +293,10 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 		break;
 
 		case 's':
-			if(buf[1]=='c') { // set arc capcitor charg level
+			if(buf[1]=='e') { // set arc capcitor charg level
 				String str((const char*)&buf[2]);
-				set_Config_Drv(str); // example config "64_64_64_64_64_64_64"
+				DRV2605__effect_sequence = str;
+				DRV2605__parse_waveform_string_sequence(DRV2605__effect_sequence); // example config "64_64_64_64_64_64_64"
 			}
 		break; 
 	}
@@ -174,12 +311,12 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 		case 's':
 			if(buf[1]=='e') {
 				Serial.println("shake enabled");
-				DRV2605_shaker_run = 1;
+				DRV2605__shaker_run = 1;
 			}
 
 			if(buf[1]=='d') {
 				Serial.println("shake disabled");
-				DRV2605_shaker_run = 2;
+				DRV2605__shaker_run = 2;
 			}
 		break;
 
@@ -219,30 +356,48 @@ char SERIAL__readSingleHex(char c) {
 // begin: shaker driver DRV2605
 
 
-/*
- * Sets the config new.
- */
-void config_Drv(uint8_t form_1, uint8_t form_2, uint8_t form_3, uint8_t form_4, uint8_t form_5, uint8_t form_6, uint8_t form_7 ) {
-	DRV2605_shaker.setWaveform(0, form_1);  
-	DRV2605_shaker.setWaveform(1, form_2);  
-	DRV2605_shaker.setWaveform(2, form_3);  
-	DRV2605_shaker.setWaveform(3, form_4);  
-	DRV2605_shaker.setWaveform(4, form_5);  
-	DRV2605_shaker.setWaveform(5, form_6);  
-	DRV2605_shaker.setWaveform(6, form_7);  // end 
+void DRV2605__init_if_required() {
+	if(DRV2605__shaker.readRegister8(DRV2605_REG_WAVESEQ1)==0) {
+		DRV2605__init();
+		delay(1);
+	}
+}
+
+
+void DRV2605__init() {
+	// Configuration for DRV2605_Haptic I2C trigger Modus
+	DRV2605__shaker.begin();
+	DRV2605__shaker.setMode(DRV2605_MODE_INTTRIG); // default, internal trigger when sending GO command
+	DRV2605__shaker.selectLibrary(1); // effect library mode
+	DRV2605__shaker.useERM(); // actuactor type set to rotary
+	DRV2605__parse_waveform_string_sequence(DRV2605__effect_sequence); // default value
 }
 
 
 /*
- * Runs the DRV2605_shaker.
+ * Sets the config new.
  */
-bool DRV2605_shaker_loop() {
-	if (DRV2605_shaker_run==1) { 
-		DRV2605_shaker.go();
+void DRV2605__set_effect_waveform(uint8_t form_1, uint8_t form_2, uint8_t form_3, uint8_t form_4, uint8_t form_5, uint8_t form_6, uint8_t form_7 ) {
+	DRV2605__shaker.setWaveform(0, form_1);  
+	DRV2605__shaker.setWaveform(1, form_2);  
+	DRV2605__shaker.setWaveform(2, form_3);  
+	DRV2605__shaker.setWaveform(3, form_4);  
+	DRV2605__shaker.setWaveform(4, form_5);  
+	DRV2605__shaker.setWaveform(5, form_6);  
+	DRV2605__shaker.setWaveform(6, form_7);  // end 
+}
+
+
+/*
+ * Runs the DRV2605__shaker.
+ */
+bool DRV2605__shaker_loop() {
+	if (DRV2605__shaker_run==1) { 
+		DRV2605__shaker.go();
 	} 
-	if (DRV2605_shaker_run==2) { 
-		DRV2605_shaker.stop();
-		DRV2605_shaker_run = 0;
+	if (DRV2605__shaker_run==2) { 
+		DRV2605__shaker.stop();
+		DRV2605__shaker_run = 0;
 	}
 }
 
@@ -252,7 +407,7 @@ bool DRV2605_shaker_loop() {
  * Example "64_64_64_64_14_14_0". 0 means stop.
  * The waveform is looped by run_Drv().
  */
-bool set_Config_Drv (String my_Config) {
+bool DRV2605__parse_waveform_string_sequence (String my_Config) {
 
 	int drv_Config[] = {0,0,0,0,0,0,0};
 
@@ -280,7 +435,7 @@ bool set_Config_Drv (String my_Config) {
 
 	//Set Config
 	if (my_Config_OK) {
-		config_Drv(drv_Config [0],drv_Config [1],drv_Config [2],drv_Config [3],drv_Config [4],drv_Config [5],drv_Config [6]);
+		DRV2605__set_effect_waveform(drv_Config [0],drv_Config [1],drv_Config [2],drv_Config [3],drv_Config [4],drv_Config [5],drv_Config [6]);
 		return 1;
 	} else return 0;
 }
