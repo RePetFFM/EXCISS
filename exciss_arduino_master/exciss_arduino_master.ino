@@ -162,106 +162,170 @@ void CORE__statemachine_init() {
 void CORE__statemachine_main() {
 	CORE_statemachine_state_index_validator();
 
-	// check event data transfer window based on rtc and or internal datetime 
-
-	// if it is time for science execution and power state is good, start science bootup sequence
-
-	// flush serial buffer and enable serial parser
-
-	// switch USB to raspberry pi
-
-	// bootup raspberry pi
-
-	// waiting for first raspberry pi bootup done
-	// wait boot done for ###sec. if boot takes too long shutdown 5V power source
-
-	// release ignition statemachine
-
-	// check for science abort condition
-	// abort conditions are:
-	// - power state is below science minimum power requirement for over 10sec
-	// - ignition state machine reports unrecaverable fault
-	// - raspberry pi requests shutdown 
-
-	// waiting for raspberry pi shutdown request
-
-	// if ### second over expected raspberry pi shutdown request, try a gracefull shutdown.
-	// if no "shutting down" message is recieved for 5 second, turn off 5V power source for the Raspberry pi.
-
-
-
-	// turn off all component not required for wait mode
-
-
-	/*
 	switch (CORE__main_state) {
-		case :
-		// do something
+		case CORE__MAIN_SM_L_IDLE:
+			// check event data transfer window based on rtc and or internal datetime 
+			// if it is time for science execution and power state is good, start science bootup sequence
+			CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;
 		break;
-		case :
-		// do something
+
+		case CORE__MAIN_SM_T_DATATRANSFER_MODE:
+			CORE__main_state = CORE__MAIN_SM_L_DATATRANSFER_MODE;
 		break;
-		default:
-		// do something
+
+		case CORE__MAIN_SM_L_DATATRANSFER_MODE:
+			CORE__main_state = CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK;
+		break;
+
+		case CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK:
+			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO;
+		break;
+
+		case CORE__MAIN_SM_T_SCIENCE_GO:
+			// switch USB to raspberry pi
+			// flush serial buffer and enable serial parser
+			delay(100); // delay befor power up 5V rail for Raspberry
+			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP;
+		break;
+
+		case CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP:
+			// bootup raspberry pi
+			CORE__main_state = CORE__MAIN_SM_L_SCIEMCE_WAIT_RASPI_BOOT;
+		break;
+
+		case CORE__MAIN_SM_L_SCIEMCE_WAIT_RASPI_BOOT:
+			// waiting for first raspberry pi bootup done
+			// wait boot done for ###sec. if boot takes too long shutdown 5V power source
+			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE;
+		break;
+
+		case CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE:
+			// release ignition statemachine
+			CORE__main_state = CORE__MAIN_SM_L_SCIENCE_MISSION_ABORT_OR_DONE;
+		break;
+
+		case CORE__MAIN_SM_L_SCIENCE_MISSION_ABORT_OR_DONE:
+			// check for science abort condition
+			// abort conditions are:
+			// - power state is below science minimum power requirement for over 10sec
+			// - ignition state machine reports unrecaverable fault
+			// - raspberry pi requests shutdown 
+
+			// waiting for raspberry pi shutdown request
+			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_STOP;
+		break;
+
+		case CORE__MAIN_SM_T_SCIENCE_STOP:
+			// if ### second over expected raspberry pi shutdown request, try a gracefull shutdown.
+			// if no "shutting down" message is recieved for 5 second, turn off 5V power source for the Raspberry pi.
+			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_SHUTDOWN;
+		break;
+
+		case CORE__MAIN_SM_T_SCIENCE_SHUTDOWN:
+			// turn off all component not required for idle mode
+			CORE__main_state = CORE__MAIN_SM_L_IDLE;
+		break;
 	}
-	*/
+
 }
 
 void CORE__statemachine_powermanagment() {
 	CORE_statemachine_state_index_validator(); // prevent executing wrong code due to corrupted state index
 
-	// check usb state
-
-	// check battery state
-
-	// if usb power is down and science mission is runnitn, following conditions must be all true, to be able to continue with the experiment.
-	// is battery charglevel above minimum science power requirement?
-	
-	// transition to to deep sleep mode is required if any of the following condition is true:
-	// usb power supply is more than # days not available
-	// deep sleep mode was requested from raspberry pi
-	// deep sleep mode was requested by usb power cycle command
-	// goto deep sleep mode due to mission end
-
-
-
-	
-	/*
 	switch (CORE__powermanagment_state) {
-		case :
-		// do something
+		case CORE__POWER_SM_T_INIT:
+			CORE__powermanagment_state = CORE__POWER_SM_T_HIBERNATE_MODE;
 		break;
-		case :
-		// do something
+
+		case CORE__POWER_SM_T_HIBERNATE_MODE:
+			CORE__powermanagment_state = CORE__POWER_SM_L_HIBERNATE_MODE;
 		break;
-		default:
-		// do something
+
+		case CORE__POWER_SM_L_HIBERNATE_MODE:
+			// check usb state
+			// check battery state
+			CORE__powermanagment_state = CORE__POWER_SM_T_SLEEP_MODE;
+		break;
+
+		case CORE__POWER_SM_T_SLEEP_MODE:
+			CORE__powermanagment_state = CORE__POWER_SM_L_SLEEP_MODE;
+		break;
+
+		case CORE__POWER_SM_L_SLEEP_MODE:
+			// transition to to deep sleep mode is required if any of the following condition is true:
+			// usb power supply is more than # days not available
+			// deep sleep mode was requested from raspberry pi
+			// deep sleep mode was requested by usb power cycle command
+			// goto deep sleep mode due to mission end
+			CORE__powermanagment_state = CORE__POWER_SM_L_SCIENCE_POWER_READY;
+		break;
+
+		case CORE__POWER_SM_L_SCIENCE_POWER_READY:
+			CORE__powermanagment_state = CORE__POWER_SM_T_SCIENCE_POWER_OK;
+		break;
+
+		case CORE__POWER_SM_T_SCIENCE_POWER_OK:
+			CORE__powermanagment_state = CORE__POWER_SM_L_SCIENCE_POWER_MODE;
+		break;
+
+		case CORE__POWER_SM_L_SCIENCE_POWER_MODE:
+			// if usb power is down and science mission is running, following conditions must be all true, to be able to continue with the experiment.
+			// is battery charglevel above minimum science power requirement?	
+			CORE__powermanagment_state = CORE__POWER_SM_T_SLEEP_MODE;
+		break;
 	}
-	*/
+	
 }
 
 void CORE__statemachine_ignition() {
 	CORE_statemachine_state_index_validator(); // prevent executing wrong code due to corrupted state index
 	
-	// wait state for charg reques from raspberry pi
+	switch (CORE__ignition_state) {
 
-	// charging arc capacitor until requested voltage value
-
-	// arc capcitor charging if voltage value doesn't rise 
-
-	//
-	/*
-	switch (CORE__powermanagment_state) {
-		case :
-		// do something
+		case CORE__IGNITION_SM_T_INIT:
+			CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
 		break;
-		case :
-		// do something
+
+		case CORE__IGNITION_SM_L_OFF:
+			CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
 		break;
-		default:
-		// do something
+
+		case CORE__IGNITION_SM_L_IDLE:
+			// wait state for charg reques from raspberry pi
+			CORE__ignition_state = CORE__IGNITION_SM_T_CHARGE;
+		break;
+
+		case CORE__IGNITION_SM_T_CHARGE:
+			CORE__ignition_state = CORE__IGNITION_SM_L_CHARGE;
+		break;
+
+		case CORE__IGNITION_SM_L_CHARGE:
+			// charging arc capacitor until requested voltage value
+			CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_READY;
+		break;
+
+		case CORE__IGNITION_SM_T_IGNITION_READY:
+			CORE__ignition_state = CORE__IGNITION_SM_L_IGNITION_WAIT;
+		break;
+
+		case CORE__IGNITION_SM_L_IGNITION_WAIT:
+			CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_IGNITE;
+		break;
+
+		case CORE__IGNITION_SM_T_IGNITION_IGNITE:
+			CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_REDO;
+		break;
+
+		case CORE__IGNITION_SM_T_IGNITION_REDO:
+			CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_DONE;
+		break;
+
+		case CORE__IGNITION_SM_T_IGNITION_DONE:
+			CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
+		break;
+
 	}
-	*/
+	
 }
 
 // end: Core

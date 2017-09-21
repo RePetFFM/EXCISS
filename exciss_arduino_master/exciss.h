@@ -47,3 +47,48 @@
 #define CORE__INIT_STATE_INIT_SERIAL						0x44444444
 #define CORE__INIT_STATE_END								0xFFFFFFFF
 
+
+// ------------------------------------
+// main state machine definitions
+#define CORE__MAIN_SM_L_IDLE								101
+#define CORE__MAIN_SM_T_DATATRANSFER_MODE					202
+#define CORE__MAIN_SM_L_DATATRANSFER_MODE 					203
+#define CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK			301
+#define CORE__MAIN_SM_T_SCIENCE_GO							302
+#define CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP			303
+#define CORE__MAIN_SM_L_SCIEMCE_WAIT_RASPI_BOOT				304
+#define CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE				305
+#define CORE__MAIN_SM_L_SCIENCE_MISSION_ABORT_OR_DONE		306
+#define CORE__MAIN_SM_T_SCIENCE_STOP						307
+#define CORE__MAIN_SM_T_SCIENCE_SHUTDOWN					308
+
+
+// ------------------------------------
+// power managment state machine definitions
+#define CORE__POWER_SM_T_INIT								101
+#define CORE__POWER_SM_T_HIBERNATE_MODE						201
+#define CORE__POWER_SM_L_HIBERNATE_MODE						201
+#define CORE__POWER_SM_T_SLEEP_MODE							301
+#define CORE__POWER_SM_L_SLEEP_MODE							302
+#define CORE__POWER_SM_T_SCIENCE_MODE						401
+#define CORE__POWER_SM_L_SCIENCE_POWER_READY				402
+#define CORE__POWER_SM_T_SCIENCE_POWER_OK					403
+#define CORE__POWER_SM_L_SCIENCE_POWER_MODE					404
+
+
+// ------------------------------------
+// ignition managment state machine definitions
+#define CORE__IGNITION_SM_T_INIT								101
+#define CORE__IGNITION_SM_L_OFF									102
+#define CORE__IGNITION_SM_L_IDLE								201
+#define CORE__IGNITION_SM_T_CHARGE								301
+#define CORE__IGNITION_SM_L_CHARGE								302
+#define CORE__IGNITION_SM_T_IGNITION_READY						401
+#define CORE__IGNITION_SM_L_IGNITION_WAIT						402
+#define CORE__IGNITION_SM_T_IGNITION_IGNITE						403
+#define CORE__IGNITION_SM_T_IGNITION_REDO						404
+#define CORE__IGNITION_SM_T_IGNITION_DONE						405
+
+
+
+
