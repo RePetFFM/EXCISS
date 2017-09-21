@@ -1,5 +1,5 @@
 
-void powermanager_begin();
+bool powermanager_begin();
 void powermanager_poll();
 
 // power-cycle command requests

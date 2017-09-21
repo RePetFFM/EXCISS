@@ -38,6 +38,8 @@ uint32_t CORE__main_state = 0x00000000; // the state char are mirrord 4bit value
 
 uint32_t CORE__powermanagment_state = 0x00000000; // the state char are mirrord 4bit values. For example the 4bit value 0101 
 
+uint8_t CORE__statemachine_retry = 0;
+
 void loop() {
 	if(CORE__init_done == CORE__INIT_EXECUTE) {
 		CORE__statemachine_init();
@@ -53,7 +55,7 @@ void loop() {
 		DRV2605__shaker_loop();
 	}
 
-	CORE_statemachine_state_index_validator();
+	
 
 	wdt_reset(); // reset watchdog timer
 }
@@ -74,8 +76,6 @@ void CORE__init_pins() {
 	// right side
 	pinMode(CORE__PIN_DOUT_USB_SWITCH_SWITCH, OUTPUT);
 	pinMode(CORE__PIN_DOUT_BABYSITTER_SYSOFF, OUTPUT);
-	pinMode(CORE__PIN_DIN_BABYSITTER_PGOOD, INPUT);
-	pinMode(CORE__PIN_DIN_BABYSITTER_GPOUT, INPUT);
 	pinMode(CORE__PIN_PWM_POWERLED_BACK, OUTPUT);
 
 	// initial pin state
@@ -103,20 +103,12 @@ void CORE__init_i2c_components() {
 	}
 }
 
-char CORE__eeprom_raid_read_char(int address) {
-	char c1,c2,c3;
-	c1 = EEPROM.read(address);
-	c2 = EEPROM.read(address+1);
-	c3 = EEPROM.read(address+2);
-	if(c1==c2 && c2==c3) {
-
-	}
+char CORE__eeprom_read_char(int address) {
+	return EEPROM.read(address);
 }
 
-void CORE__eeprom_raid_write_char(int address,char value) {
+void CORE__eeprom_write_char(int address,char value) {
 	EEPROM.update(address,value);
-	EEPROM.update(address+1,value);
-	EEPROM.update(address+2,value);
 }
 
 void CORE_statemachine_state_index_validator() {
@@ -128,16 +120,37 @@ void CORE_statemachine_state_index_validator() {
 }
 
 void CORE__statemachine_init() {
+	CORE_statemachine_state_index_validator(); // prevent executing wrong code due to corrupted state index
+
 	switch (CORE__init_state) {
 		case CORE__INIT_STATE_SET_PWM_FREQ:
 			// set higher pwm frequency for the leds to prevent flicker in video recording
 			TCCR1B = TCCR1B & 0b11111000 | 0x01; // 0x01 = 31250Hz/1, 0x02 = 31250Hz/8
-			CORE__init_state 	= CORE__INIT_STATE_SET_I2C_COMPONENT_TO_INIT_STATE;
+			CORE__init_state = CORE__INIT_STATE_I2C_BABYSITTER;
+			CORE__statemachine_retry = 0;
 		break;
-		case CORE__INIT_STATE_SET_I2C_COMPONENT_TO_INIT_STATE:
-			CORE__init_i2c_components();
-			CORE__init_state 	= CORE__INIT_STATE_INIT_SERIAL;
+		case CORE__INIT_STATE_I2C_BABYSITTER:
+			if (!powermanager_begin() && (CORE__statemachine_retry<10)) {
+				// retry if init was not successful
+				CORE__statemachine_retry++;
+				delay(10);
+			} else {
+				CORE__init_state = CORE__INIT_STATE_I2C_RTC;
+				CORE__statemachine_retry = 0;	
+			}
 		break;
+
+		case CORE__INIT_STATE_I2C_RTC:
+			if (!rtc.begin() && (CORE__statemachine_retry<10)) {
+				// retry if init was not successful
+				CORE__statemachine_retry++;
+				delay(10);
+			} else {
+				CORE__statemachine_retry = 0;
+				CORE__init_state = CORE__INIT_STATE_INIT_SERIAL;
+			}
+		break;
+
 		case CORE__INIT_STATE_INIT_SERIAL:
 			Serial.begin( UART_BAUTRATE );
 			CORE__init_state 	= CORE__INIT_STATE_END;
@@ -147,6 +160,39 @@ void CORE__statemachine_init() {
 }
 
 void CORE__statemachine_main() {
+	CORE_statemachine_state_index_validator();
+
+	// check event data transfer window based on rtc and or internal datetime 
+
+	// if it is time for science execution and power state is good, start science bootup sequence
+
+	// flush serial buffer and enable serial parser
+
+	// switch USB to raspberry pi
+
+	// bootup raspberry pi
+
+	// waiting for first raspberry pi bootup done
+	// wait boot done for ###sec. if boot takes too long shutdown 5V power source
+
+	// release ignition statemachine
+
+	// check for science abort condition
+	// abort conditions are:
+	// - power state is below science minimum power requirement for over 10sec
+	// - ignition state machine reports unrecaverable fault
+	// - raspberry pi requests shutdown 
+
+	// waiting for raspberry pi shutdown request
+
+	// if ### second over expected raspberry pi shutdown request, try a gracefull shutdown.
+	// if no "shutting down" message is recieved for 5 second, turn off 5V power source for the Raspberry pi.
+
+
+
+	// turn off all component not required for wait mode
+
+
 	/*
 	switch (CORE__main_state) {
 		case :
@@ -162,6 +208,48 @@ void CORE__statemachine_main() {
 }
 
 void CORE__statemachine_powermanagment() {
+	CORE_statemachine_state_index_validator(); // prevent executing wrong code due to corrupted state index
+
+	// check usb state
+
+	// check battery state
+
+	// if usb power is down and science mission is runnitn, following conditions must be all true, to be able to continue with the experiment.
+	// is battery charglevel above minimum science power requirement?
+	
+	// transition to to deep sleep mode is required if any of the following condition is true:
+	// usb power supply is more than # days not available
+	// deep sleep mode was requested from raspberry pi
+	// deep sleep mode was requested by usb power cycle command
+	// goto deep sleep mode due to mission end
+
+
+
+	
+	/*
+	switch (CORE__powermanagment_state) {
+		case :
+		// do something
+		break;
+		case :
+		// do something
+		break;
+		default:
+		// do something
+	}
+	*/
+}
+
+void CORE__statemachine_ignition() {
+	CORE_statemachine_state_index_validator(); // prevent executing wrong code due to corrupted state index
+	
+	// wait state for charg reques from raspberry pi
+
+	// charging arc capacitor until requested voltage value
+
+	// arc capcitor charging if voltage value doesn't rise 
+
+	//
 	/*
 	switch (CORE__powermanagment_state) {
 		case :
