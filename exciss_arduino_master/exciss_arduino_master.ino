@@ -1,3 +1,4 @@
+
 #include <Wire.h>
 #include <EEPROM.h>
 #include <avr/wdt.h>
@@ -5,6 +6,7 @@
 #include "exciss.h"
 #include "Adafruit_DRV2605.h"
 #include "powermanager.h"
+#include "chargemonitor.h"
 
 
 // RTC
@@ -34,11 +36,26 @@ uint32_t CORE__init_done = CORE__INIT_EXECUTE; // 0xA5A5 = init run state, 0x5A5
 
 uint32_t CORE__init_state = CORE__INIT_STATE_SET_PWM_FREQ; // the state char are mirrord 4bit values. For example the 4bit value 0101 
 
-uint32_t CORE__main_state = 0x00000000; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+uint32_t CORE__main_state = CORE__MAIN_SM_T_RECOVER; // the state char are mirrord 4bit values. For example the 4bit value 0101 
 
-uint32_t CORE__powermanagment_state = 0x00000000; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+uint32_t CORE__powermanagment_state = CORE__POWER_SM_T_INIT; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+
+uint32_t CORE__ignition_state = CORE__IGNITION_SM_T_INIT;
+
 
 uint8_t CORE__statemachine_retry = 0;
+
+
+char ignition_armed = 0x5A;
+
+int ignition_charging_capacity_target_voltage = 0; // must be configured via serial from raspberry pi.
+
+
+// failure code variales
+char init_i2c_failure_codes[3];
+char init_failure_code = 0;
+
+char ignition_failure_code = 0;  // 00 - FF
 
 void loop() {
 	if(CORE__init_done == CORE__INIT_EXECUTE) {
@@ -46,16 +63,18 @@ void loop() {
 	} 
 
 	if(CORE__init_done == CORE__INIT_DONE) {
+		powermanager_poll();
+
 		SERIAL__Parser();
 
 		CORE__statemachine_main();
 
 		CORE__statemachine_powermanagment();
 
+		CORE__statemachine_ignition();
+
 		DRV2605__shaker_loop();
 	}
-
-	
 
 	wdt_reset(); // reset watchdog timer
 }
@@ -126,6 +145,8 @@ void CORE__statemachine_init() {
 		case CORE__INIT_STATE_SET_PWM_FREQ:
 			// set higher pwm frequency for the leds to prevent flicker in video recording
 			TCCR1B = TCCR1B & 0b11111000 | 0x01; // 0x01 = 31250Hz/1, 0x02 = 31250Hz/8
+
+
 			CORE__init_state = CORE__INIT_STATE_I2C_BABYSITTER;
 			CORE__statemachine_retry = 0;
 		break;
@@ -133,7 +154,13 @@ void CORE__statemachine_init() {
 			if (!powermanager_begin() && (CORE__statemachine_retry<10)) {
 				// retry if init was not successful
 				CORE__statemachine_retry++;
+				init_i2c_failure_codes[0] = 0xA0;
+				init_i2c_failure_codes[0] &= CORE__statemachine_retry;
 				delay(10);
+			} else if(CORE__statemachine_retry>=10) {
+				init_i2c_failure_codes[0] = 0xF1; // major failor babysitter doesen't responde after 10 try's
+				CORE__init_state = CORE__INIT_STATE_I2C_RTC;
+				CORE__statemachine_retry = 0;
 			} else {
 				CORE__init_state = CORE__INIT_STATE_I2C_RTC;
 				CORE__statemachine_retry = 0;	
@@ -144,7 +171,13 @@ void CORE__statemachine_init() {
 			if (!rtc.begin() && (CORE__statemachine_retry<10)) {
 				// retry if init was not successful
 				CORE__statemachine_retry++;
+				init_i2c_failure_codes[1] = 0xA0;
+				init_i2c_failure_codes[1] &= CORE__statemachine_retry;
 				delay(10);
+			} else if(CORE__statemachine_retry>=10) {
+				init_i2c_failure_codes[1] = 0xF1; // major failor babysitter doesen't responde after 10 try's
+				CORE__init_state = CORE__INIT_STATE_I2C_RTC;
+				CORE__statemachine_retry = 0;
 			} else {
 				CORE__statemachine_retry = 0;
 				CORE__init_state = CORE__INIT_STATE_INIT_SERIAL;
@@ -163,19 +196,45 @@ void CORE__statemachine_main() {
 	CORE_statemachine_state_index_validator();
 
 	switch (CORE__main_state) {
+		case CORE__MAIN_SM_T_RECOVER:
+			CORE__main_state = CORE__MAIN_SM_L_RECOVER;
+		break;
+
+		case CORE__MAIN_SM_L_RECOVER:
+			CORE__main_state = CORE__MAIN_SM_T_IDLE;
+		break;
+
+		case CORE__MAIN_SM_T_IDLE:
+			CORE__main_state = CORE__MAIN_SM_L_IDLE;
+		break;
+
 		case CORE__MAIN_SM_L_IDLE:
 			// check event data transfer window based on rtc and or internal datetime 
+			if(DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_START_HOUR
+				&& DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_END_HOUR) {
+				CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;	
+			}
 			// if it is time for science execution and power state is good, start science bootup sequence
-			CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;
+			
+			if((DS3231__get_hour()>=0 && DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_START_HOUR)
+				|| (DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_END_HOUR && DS3231__get_hour()<=23)) {
+				if(DS3231__get_minute()==0) {
+					CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;	
+				}
+				
+			}
 		break;
 
 		case CORE__MAIN_SM_T_DATATRANSFER_MODE:
-			CORE__main_state = CORE__MAIN_SM_L_DATATRANSFER_MODE;
+			digitalWrite(CORE__PIN_DOUT_USB_SWITCH_SWITCH, USBSWITCH__SWITCH_TRANSFER);
+			CORE__main_state = CORE__MAIN_SM_L_IDLE;
 		break;
 
+		/*
 		case CORE__MAIN_SM_L_DATATRANSFER_MODE:
 			CORE__main_state = CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK;
 		break;
+		*/
 
 		case CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK:
 			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO;
@@ -184,6 +243,7 @@ void CORE__statemachine_main() {
 		case CORE__MAIN_SM_T_SCIENCE_GO:
 			// switch USB to raspberry pi
 			// flush serial buffer and enable serial parser
+			digitalWrite(CORE__PIN_DOUT_USB_SWITCH_SWITCH, USBSWITCH__SWITCH_RASPI);
 			delay(100); // delay befor power up 5V rail for Raspberry
 			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP;
 		break;
@@ -277,34 +337,80 @@ void CORE__statemachine_powermanagment() {
 	
 }
 
+uint8_t ignition_fail_counter = 0;
+
+int ignition_requested_charging_voltage = 0;
+
 void CORE__statemachine_ignition() {
+	static unsigned long ignition_max_charging_runtime; 
+	static unsigned long ignition_retry_delay;
+
 	CORE_statemachine_state_index_validator(); // prevent executing wrong code due to corrupted state index
 	
 	switch (CORE__ignition_state) {
 
 		case CORE__IGNITION_SM_T_INIT:
 			CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
+
+			ignition_armed = 0x5A;
+			ignition_requested_charging_voltage = 0;
+			ignition_charging_capacity_target_voltage = 0;
 		break;
 
 		case CORE__IGNITION_SM_L_OFF:
-			CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
+			if(ignition_armed==0xA5) {
+				ignition_requested_charging_voltage = 0;
+				ignition_charging_capacity_target_voltage = 0;
+				CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
+			}
 		break;
 
 		case CORE__IGNITION_SM_L_IDLE:
 			// wait state for charg reques from raspberry pi
-			CORE__ignition_state = CORE__IGNITION_SM_T_CHARGE;
+			if(ignition_requested_charging_voltage>=CORE_IGNITION_MIN_CHARG_VOLTAGE) {
+				ignition_charging_capacity_target_voltage = ignition_requested_charging_voltage;
+				CORE__ignition_state = CORE__IGNITION_SM_T_CHARGE;
+			} else if(ignition_requested_charging_voltage==-1) {
+				ignition_charging_capacity_target_voltage = 0;
+				ignition_failure_code = 1;
+				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
+			}
+		
 		break;
 
 		case CORE__IGNITION_SM_T_CHARGE:
-			CORE__ignition_state = CORE__IGNITION_SM_L_CHARGE;
+			if(ignition_charging_capacity_target_voltage>0) {
+				chargemonitor_start_charging(ignition_charging_capacity_target_voltage);	
+				ignition_max_charging_runtime = millis() + 300000L; // 300 second max charging time
+				CORE__ignition_state = CORE__IGNITION_SM_L_CHARGE;
+			} else {
+				// if cap charg voltage target is 0 (init default value) abort ignition
+				// send failure code to raspberry pi
+				chargemonitor_abort();
+				ignition_failure_code = 11;
+				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
+			}
+			
 		break;
 
 		case CORE__IGNITION_SM_L_CHARGE:
 			// charging arc capacitor until requested voltage value
-			CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_READY;
+			if(chargemonitor_has_enough_charge()) {
+				chargemonitor_stop_charging();
+				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_READY;
+			}
+
+			if(millis()>=ignition_max_charging_runtime) {
+				// max chargingtime was exceeded abort charging
+				chargemonitor_abort();
+				ignition_failure_code = 12;
+				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
+			}
+			
 		break;
 
 		case CORE__IGNITION_SM_T_IGNITION_READY:
+			ignition_fail_counter = 0;
 			CORE__ignition_state = CORE__IGNITION_SM_L_IGNITION_WAIT;
 		break;
 
@@ -313,14 +419,52 @@ void CORE__statemachine_ignition() {
 		break;
 
 		case CORE__IGNITION_SM_T_IGNITION_IGNITE:
-			CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_REDO;
+			chargemonitor_ignite();
+			Serial.print("IG");
+			Serial.print(chargemonitor_last_actual_voltage);
+			Serial.print(" ");
+			Serial.print(chargemonitor_last_after_ignition_voltage);
+			CORE__ignition_state = CORE__IGNITION_SM_L_IGNITION_REDO;
 		break;
 
-		case CORE__IGNITION_SM_T_IGNITION_REDO:
-			CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_DONE;
+		case CORE__IGNITION_SM_L_IGNITION_REDO:
+			if(!chargemonitor_last_ignition_succeeded() && ignition_fail_counter<CORE_IGNITION_RETRY_MAX_COUNT) {
+				/* 
+					the ignition spark doesn't work or was not sucsessful to trigger the discharg arc.
+					reignite th ignition spark and retry.
+				*/
+				ignition_fail_counter++;
+				Serial.print("_F"); // F = fail
+				Serial.println(ignition_fail_counter);
+				ignition_retry_delay = millis()+CORE_IGNITION_RETRY_DELAY_MILLIS;
+				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_REDO_DELAY;
+			} else if(ignition_fail_counter==0) {
+				Serial.println("_G"); // G = good
+				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_DONE;
+			} else {
+				ignition_failure_code = 21;
+				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
+			}
+		break;
+
+		case CORE__IGNITION_SM_T_IGNITION_REDO_DELAY:
+			// wait for next retry ignition
+			if(millis()>=ignition_retry_delay) {
+				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_IGNITE;
+			}
 		break;
 
 		case CORE__IGNITION_SM_T_IGNITION_DONE:
+			// disarm ignition state machine
+			ignition_armed = 0x5A;
+			CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
+		break;
+
+		case CORE__IGNITION_SM_T_ABORT_DUE_FAILURE:
+			// ignition failure handling
+			ignition_armed = 0x5A;
+			Serial.print("IGF ");
+			Serial.println(ignition_failure_code,HEX);
 			CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
 		break;
 
@@ -333,7 +477,22 @@ void CORE__statemachine_ignition() {
 //..............................................................
 
 
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+// begin: ignition spark & arc unit
 
+void IGNITION_request_charging(int cap_target_voltage) {
+	if(cap_target_voltage>=CORE_IGNITION_MIN_CHARG_VOLTAGE
+		&& cap_target_voltage<=CORE_IGNITION_MAX_CHARG_VOLTAGE) {
+		ignition_requested_charging_voltage = cap_target_voltage;
+	} else {
+		ignition_requested_charging_voltage = -1;
+	}
+}
+
+// end: ignition spark & arc unit
+//..............................................................
+//..............................................................
 
 
 //--------------------------------------------------------------
@@ -444,6 +603,8 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 			if(buf[1]=='t') { // set arc capcitor charg level
 				buf[0] = ' ';
 				tmpLong = atoi((const char*)&buf[1]);
+				IGNITION_request_charging((int)tmpLong);
+				Serial.print("IG CHARG REQUEST ACK ");
 				Serial.println(tmpLong);
 			}
 		break;
@@ -623,6 +784,21 @@ String DS3231__get_Time() {
 	current_Time += "_" + String( now.minute());
 	current_Time += "_" + String( now.second());
 	return current_Time;
+}
+
+long DS3231__get_unixtime() {
+	DateTime now = rtc.now();
+	return now.unixtime();
+}
+
+long DS3231__get_hour() {
+	DateTime now = rtc.now();
+	return now.hour();
+}
+
+long DS3231__get_minute() {
+	DateTime now = rtc.now();
+	return now.min();
 }
 
 /*Sets the rtc to a new time. Sring format is: 

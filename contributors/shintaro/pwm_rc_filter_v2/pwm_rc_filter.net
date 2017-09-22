@@ -1,7 +1,0 @@
-* /Users/sfujita/git-repo/EXCISS/contributors/shintaro/pwm_rc_filter_v2/pwm_rc_filter.asc
-V1 N001 0 PULSE(0 3.3 0.01 0.0 0.0 0.001 0.002 50)
-C1 N001 0 0.1µ Rser=0 Lser=0 mfg=" ---" pn=" ---" type=" ---"
-R1 N002 N001 10k
-.tran 0 100mS 0
-.backanno
-.end
