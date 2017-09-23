@@ -32,30 +32,32 @@ void setup() {
 	wdt_reset(); // reset watchdog timer
 }
 
+// global states
 uint32_t CORE__init_done = CORE__INIT_EXECUTE; // 0xA5A5 = init run state, 0x5A5A = init done
 
+
+// init state machine
 uint32_t CORE__init_state = CORE__INIT_STATE_SET_PWM_FREQ; // the state char are mirrord 4bit values. For example the 4bit value 0101 
-
-uint32_t CORE__main_state = CORE__MAIN_SM_T_RECOVER; // the state char are mirrord 4bit values. For example the 4bit value 0101 
-
-uint32_t CORE__powermanagment_state = CORE__POWER_SM_T_INIT; // the state char are mirrord 4bit values. For example the 4bit value 0101 
-
-uint32_t CORE__ignition_state = CORE__IGNITION_SM_T_INIT;
-
-
-uint8_t CORE__statemachine_retry = 0;
-
-
-char ignition_armed = 0x5A;
-
-int ignition_charging_capacity_target_voltage = 0; // must be configured via serial from raspberry pi.
-
-
-// failure code variales
-char init_i2c_failure_codes[3];
+char init_i2c_failure_codes[3];// failure code variales
 char init_failure_code = 0;
 
+// main state machine
+uint32_t CORE__main_state = CORE__MAIN_SM_T_RECOVER; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+uint8_t CORE__statemachine_retry = 0;
+
+// powermanagment state machine
+uint32_t CORE__powermanagment_state = CORE__POWER_SM_T_INIT; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+
+// highvoltage state machine
+uint32_t CORE__ignition_state = CORE__IGNITION_SM_T_INIT;
+
+char ignition_armed = 0x5A; // 0xA5 = armed, 0x5A = disarmed
+int ignition_charging_capacity_target_voltage = 0; // must be configured via serial from raspberry pi.
 char ignition_failure_code = 0;  // 00 - FF
+
+
+
+
 
 void loop() {
 	if(CORE__init_done == CORE__INIT_EXECUTE) {
@@ -150,6 +152,7 @@ void CORE__statemachine_init() {
 			CORE__init_state = CORE__INIT_STATE_I2C_BABYSITTER;
 			CORE__statemachine_retry = 0;
 		break;
+
 		case CORE__INIT_STATE_I2C_BABYSITTER:
 			if (!powermanager_begin() && (CORE__statemachine_retry<10)) {
 				// retry if init was not successful
@@ -193,6 +196,7 @@ void CORE__statemachine_init() {
 }
 
 void CORE__statemachine_main() {
+	static unsigned long main_statemachine_delay = 0;
 	CORE_statemachine_state_index_validator();
 
 	switch (CORE__main_state) {
@@ -209,58 +213,78 @@ void CORE__statemachine_main() {
 		break;
 
 		case CORE__MAIN_SM_L_IDLE:
-			// check event data transfer window based on rtc and or internal datetime 
-			if(DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_START_HOUR
-				&& DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_END_HOUR) {
-				CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;	
-			}
-			// if it is time for science execution and power state is good, start science bootup sequence
 			
-			if((DS3231__get_hour()>=0 && DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_START_HOUR)
-				|| (DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_END_HOUR && DS3231__get_hour()<=23)) {
-				if(DS3231__get_minute()==0) {
-					CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;	
-				}
-				
+			switch(TIMEKEEPER__get_current_timeframe()) {
+				case TIMEKEEPER__DATA_TRANSFER_WINDOW:
+					CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;
+				break;
+
+				case TIMEKEEPER__SCIENCE_WINDOW:
+					CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO_CONDITION_CHECK;
+				break;
 			}
 		break;
 
 		case CORE__MAIN_SM_T_DATATRANSFER_MODE:
-			digitalWrite(CORE__PIN_DOUT_USB_SWITCH_SWITCH, USBSWITCH__SWITCH_TRANSFER);
-			CORE__main_state = CORE__MAIN_SM_L_IDLE;
+			USB_DATASWITCH_try_switch_to_transfer_mode();
+			CORE__main_state = CORE__MAIN_SM_L_DATATRANSFER_MODE;
 		break;
 
-		/*
 		case CORE__MAIN_SM_L_DATATRANSFER_MODE:
-			CORE__main_state = CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK;
+			if(TIMEKEEPER__get_current_timeframe()==TIMEKEEPER__SCIENCE_WINDOW) {
+				CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE_CLOSE_DELAY;
+				main_statemachine_delay = millis()+100;
+			}
 		break;
-		*/
 
-		case CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK:
-			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO;
+		case CORE__MAIN_SM_T_DATATRANSFER_MODE_CLOSE_DELAY:
+			if(millis()>=main_statemachine_delay) {
+				CORE__ignition_state = CORE__MAIN_SM_L_IDLE;
+			}
+		break;
+		
+		case CORE__MAIN_SM_T_SCIENCE_GO_CONDITION_CHECK:
+			if(powermanager_has_power_for_experiment()) {
+				// TODO!!! Check for minimum execution time until transfer time frame 
+				CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO;
+			}
+
+			CORE__main_state = CORE__MAIN_SM_L_IDLE;			
 		break;
 
 		case CORE__MAIN_SM_T_SCIENCE_GO:
 			// switch USB to raspberry pi
 			// flush serial buffer and enable serial parser
-			digitalWrite(CORE__PIN_DOUT_USB_SWITCH_SWITCH, USBSWITCH__SWITCH_RASPI);
-			delay(100); // delay befor power up 5V rail for Raspberry
+			USB_DATASWITCH_try_switch_to_science_mode();
+			powermanager_8V_on();
+			main_statemachine_delay = millis()+100; // wait for 100 millis befor turn on raspberry pi
 			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP;
 		break;
 
+		case CORE__MAIN_SM_T_SCIENCE_GO_DELAY:
+			if(millis()>=main_statemachine_delay) {
+				CORE__ignition_state = CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP;
+			}
+		break;
+
 		case CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP:
-			// bootup raspberry pi
+			// powering up 5V switched power rail. The raspberry pi will begin with booting
+			powermanager_5V_on();
+			raspberry_state = RASPBERRY__state_booting;
 			CORE__main_state = CORE__MAIN_SM_L_SCIEMCE_WAIT_RASPI_BOOT;
 		break;
 
 		case CORE__MAIN_SM_L_SCIEMCE_WAIT_RASPI_BOOT:
 			// waiting for first raspberry pi bootup done
 			// wait boot done for ###sec. if boot takes too long shutdown 5V power source
-			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE;
+			if(raspberry_state == RASPBERRY__state_operational) {
+				CORE__main_state = CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE;	
+			}
 		break;
 
 		case CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE:
 			// release ignition statemachine
+			
 			CORE__main_state = CORE__MAIN_SM_L_SCIENCE_MISSION_ABORT_OR_DONE;
 		break;
 
@@ -272,7 +296,16 @@ void CORE__statemachine_main() {
 			// - raspberry pi requests shutdown 
 
 			// waiting for raspberry pi shutdown request
-			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_STOP;
+			if(raspberry_state != RASPBERRY__state_critical) {
+				raspberry_state = RASPBERRY__state_shutdown;	
+				CORE__main_state = CORE__MAIN_SM_T_SCIENCE_STOP;
+			}
+			
+			
+		break;
+
+		case CORE__MAIN_SM_T_SCIENCE_ABORT:
+			powermanager_8V_off();
 		break;
 
 		case CORE__MAIN_SM_T_SCIENCE_STOP:
@@ -283,6 +316,8 @@ void CORE__statemachine_main() {
 
 		case CORE__MAIN_SM_T_SCIENCE_SHUTDOWN:
 			// turn off all component not required for idle mode
+			powermanager_5V_off();
+			raspberry_state = RASPBERRY__state_offline;
 			CORE__main_state = CORE__MAIN_SM_L_IDLE;
 		break;
 	}
@@ -477,6 +512,49 @@ void CORE__statemachine_ignition() {
 //..............................................................
 
 
+
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+// begin: master timekeeper
+
+uint8_t TIMEKEEPER__get_current_timeframe() {
+
+	if(DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_START_HOUR && DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_END_HOUR) {
+		return TIMEKEEPER__DATA_TRANSFER_WINDOW;
+	}
+	// if it is time for science execution and power state is good, start science bootup sequence
+	
+	if((DS3231__get_hour()>=0 && DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_START_HOUR) || (DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_END_HOUR && DS3231__get_hour()<=23)) {
+		if(DS3231__get_minute()>=0 && DS3231__get_minute()<=3) {
+			return TIMEKEEPER__SCIENCE_WINDOW;
+		}
+	}
+}
+
+// end: master timekeeper
+//..............................................................
+//..............................................................
+
+
+
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+// begin: usb data switch unit
+
+bool USB_DATASWITCH_try_switch_to_transfer_mode() {
+	return true;
+}
+
+bool USB_DATASWITCH_try_switch_to_science_mode() {
+	
+}
+
+// end: usb data switch unit
+//..............................................................
+//..............................................................
+
+
+
 //--------------------------------------------------------------
 //--------------------------------------------------------------
 // begin: ignition spark & arc unit
@@ -561,10 +639,10 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 			}
 		break;
 
-		case 'h':
+		case 'h': // requesting current health data
 			Serial.println("h");
 		break;
-		
+
 	}
 }
 
@@ -638,10 +716,14 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 		break;
 
 		case 'r':
+			if(buf[1]=='r') {
+				Serial.println("RPiRdy");
+			}
 			if(buf[1]=='s') {
-				Serial.println("raspberry power down requested");
+				Serial.println("RPiShutdownRequested");
 			}
 		break;
+
 	}
 }
 
@@ -773,6 +855,8 @@ bool DRV2605__parse_waveform_string_sequence (String my_Config) {
 // begin: RTC code DS3231
 
 
+
+
 /*Returns the RTC Time as String YYYY_M_D_H_M_S*/
 String DS3231__get_Time() {
 	DateTime now = rtc.now();
@@ -798,7 +882,7 @@ long DS3231__get_hour() {
 
 long DS3231__get_minute() {
 	DateTime now = rtc.now();
-	return now.min();
+	return now.minute();
 }
 
 /*Sets the rtc to a new time. Sring format is: 

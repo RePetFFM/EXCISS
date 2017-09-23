@@ -2,10 +2,7 @@
 #include "exciss.h"
 
 
-// times in milliseconds
-//const uint32_t POWERMANAGER_T_OFF_MIN=50*((uint32_t)1000); // minimum length of power low cycle
-//const uint32_t POWERMANAGER_T_OFF_MAX=70*((uint32_t)1000); // maximum length of power low cycle
-//const uint32_t POWERMANAGER_T_WAIT_MAX=5*60*((uint32_t)1000); // maximum distance of power low cycles
+uint8_t powermanager_status = 0;
 uint64_t last_timeref_millis = 0;
 uint8_t last_state = 0;
 uint64_t last_down_flank = 0;
@@ -14,12 +11,12 @@ uint8_t cycle_count = 0;
 
 inline uint8_t get_pgood()
 {
-	return digitalRead(POWERMANAGER_PIN_PGOOD) == HIGH;
+	return digitalRead(CORE__PIN_DOUT_BABYSITTER_PGOOD) == HIGH;
 }
 
 void powermanager_begin()
 {
-	pinMode(POWERMANAGER_PIN_PGOOD, INPUT_PULLUP);
+	pinMode(CORE__PIN_DOUT_BABYSITTER_PGOOD, INPUT_PULLUP);
 	lipo.begin();
 	lipo.setCapacity(POWERMANAGER_CELL_CAPACITY);
 }
@@ -103,4 +100,21 @@ uint8_t powermanager_has_power_for_experiment()
 uint8_t powermanager_has_power_for_small_things()
 {	// minimum battery level
 	return (powermanager_get_charge_state() >= POWERMANAGER_SMALLTHINGS_MIN_CHARGE) && get_pgood();
+}
+
+// power switching
+void powermanager_8V_on() {
+	digitalWrite(CORE__PIN_DOUT_MOSFET_8V,HIGH);
+}
+
+void powermanager_8V_off() {
+	digitalWrite(CORE__PIN_DOUT_MOSFET_8V,LOW);	
+}
+
+void powermanager_5V_on() {
+	digitalWrite(CORE__PIN_DOUT_MOSFET_5V,HIGH);
+}
+
+void powermanager_5V_off() {
+	digitalWrite(CORE__PIN_DOUT_MOSFET_5V,LOW);	
 }

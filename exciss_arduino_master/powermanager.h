@@ -16,3 +16,10 @@ uint8_t powermanager_has_power_for_small_things(); // minimum battery level
 
 // temp
 uint16_t powermanager_get_charge_state();
+
+
+// power switching
+void powermanager_8V_on();
+void powermanager_8V_off();
+void powermanager_5V_on();
+void powermanager_5V_off();

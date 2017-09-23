@@ -1,8 +1,13 @@
 // ------------------------------------
-// data transfer window
+// timekeeper
+
+// configs
 #define CORE__DATATRANSFER_WINDOW_START_HOUR 		18
 #define CORE__DATATRANSFER_WINDOW_END_HOUR 			20
 #define CORE__DATATRANSFER_WINDOW_MARGIN_MINUTE 	10
+
+#define TIMEKEEPER__DATA_TRANSFER_WINDOW			0xA5
+#define TIMEKEEPER__SCIENCE_WINDOW					0x5A
 
 
 
@@ -24,6 +29,14 @@
 
 #define POWERMANAGER_THERSHOLD_MIN_USB_ON 100
 #define POWERMANAGER_THERSHOLD_MAX_USB_OFF 50
+
+// times in milliseconds
+//const uint32_t POWERMANAGER_T_OFF_MIN=50*((uint32_t)1000); // minimum length of power low cycle
+//const uint32_t POWERMANAGER_T_OFF_MAX=70*((uint32_t)1000); // maximum length of power low cycle
+//const uint32_t POWERMANAGER_T_WAIT_MAX=5*60*((uint32_t)1000); // maximum distance of power low cycles
+const uint32_t POWERMANAGER_T_OFF_MIN=4*((uint32_t)1000); // minimum length of power low cycle
+const uint32_t POWERMANAGER_T_OFF_MAX=8*((uint32_t)1000); // maximum length of power low cycle
+const uint32_t POWERMANAGER_T_WAIT_MAX=5*6*((uint32_t)1000); // maximum distance of power low cycles
 
 
 
@@ -54,8 +67,8 @@
 
 // ------------------------------------
 // usb switch config
-#define USBSWITCH__SWITCH_TRANSFER	LOW
-#define USBSWITCH__SWITCH_RASPI		HIGH
+#define USBSWITCH__SWITCH_TRANSFER		LOW
+#define USBSWITCH__SWITCH_SCIENCE		HIGH
 
 
 // ------------------------------------
@@ -88,6 +101,12 @@
 #define CHARGEMONITOR_VOLTAGE_SCALE 400/3 // beware of integer divisions!
 
 
+// ------------------------------------
+// raspberry pi operation state
+#define RASPBERRY__state_offline		0;
+#define RASPBERRY__state_booting		1;
+#define RASPBERRY__state_operational	2;
+#define RASPBERRY__state_shutdown		4;
 
 
 // ------------------------------------
@@ -110,14 +129,17 @@
 #define CORE__MAIN_SM_L_IDLE								202
 #define CORE__MAIN_SM_T_DATATRANSFER_MODE					301
 #define CORE__MAIN_SM_L_DATATRANSFER_MODE 					302
-#define CORE__MAIN_SM_L_SCIENCE_GO_CONDITION_CHECK			401
+#define CORE__MAIN_SM_T_DATATRANSFER_MODE_CLOSE_DELAY		303
+#define CORE__MAIN_SM_T_SCIENCE_GO_CONDITION_CHECK			401
 #define CORE__MAIN_SM_T_SCIENCE_GO							402
-#define CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP			403
-#define CORE__MAIN_SM_L_SCIEMCE_WAIT_RASPI_BOOT				404
-#define CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE				405
-#define CORE__MAIN_SM_L_SCIENCE_MISSION_ABORT_OR_DONE		406
-#define CORE__MAIN_SM_T_SCIENCE_STOP						407
-#define CORE__MAIN_SM_T_SCIENCE_SHUTDOWN					408
+#define CORE__MAIN_SM_T_SCIENCE_GO_DELAY					403
+#define CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP			404
+#define CORE__MAIN_SM_L_SCIEMCE_WAIT_RASPI_BOOT				405
+#define CORE__MAIN_SM_T_SCIENCE_RASPI_BOOT_DONE				406
+#define CORE__MAIN_SM_L_SCIENCE_MISSION_ABORT_OR_DONE		407
+#define CORE__MAIN_SM_T_SCIENCE_ABORT						408
+#define CORE__MAIN_SM_T_SCIENCE_STOP						409
+#define CORE__MAIN_SM_T_SCIENCE_SHUTDOWN					410
 
 
 // ------------------------------------
