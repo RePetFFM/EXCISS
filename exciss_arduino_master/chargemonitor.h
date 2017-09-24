@@ -4,6 +4,7 @@ extern int chargemonitor_last_after_ignition_voltage;
 
 void chargemonitor_begin();
 void chargemonitor_start_charging(int voltage);
+
 void chargemonitor_stop_charging();
 void chargemonitor_abort();
 bool chargemonitor_has_enough_charge();

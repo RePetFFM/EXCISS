@@ -24,7 +24,7 @@ Arduino Uno (any 'duino should do)
 #include "Arduino.h"
 #include "BQ27441_Definitions.h"
 
-#define BQ72441_I2C_TIMEOUT 2000
+#define BQ72441_I2C_TIMEOUT 20
 
 // Parameters for the current() function, to specify which current to read
 typedef enum {

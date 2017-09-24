@@ -11,14 +11,15 @@ uint8_t cycle_count = 0;
 
 inline uint8_t get_pgood()
 {
-	return digitalRead(CORE__PIN_DOUT_BABYSITTER_PGOOD) == HIGH;
+	return digitalRead(CORE__PIN_DOUT_BABYSITTER_PGOOD) == LOW;
 }
 
-void powermanager_begin()
+uint8_t powermanager_begin()
 {
 	pinMode(CORE__PIN_DOUT_BABYSITTER_PGOOD, INPUT_PULLUP);
 	lipo.begin();
 	lipo.setCapacity(POWERMANAGER_CELL_CAPACITY);
+	return true;
 }
 uint16_t powermanager_get_charge_state()
 {
