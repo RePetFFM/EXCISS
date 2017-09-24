@@ -26,9 +26,9 @@ echo "Read from arduino last stored status and error informations for health log
 #
 # Still image LEDs off
 #LED front off:
-sudo python /home/pi/EXCISS/exciss_python_master/python/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wf0
+sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wf0
 #LED back off:
-sudo python /home/pi/EXCISS/exciss_python_master/python/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wb0
+sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wb0
 
 echo "take dark still image for pixel error reference"
 python ${PYTHON_SCRIPTS}/mission_cam_cmd.py -c "raspistill -md 4 -w 1640 -h 1232 -awb auto -v -e png -o DATE_TIME_calibImgLedsOff.png 2>&1"
@@ -39,10 +39,10 @@ python ${PYTHON_SCRIPTS}/mission_cam_cmd.py -c "raspistill -md 4 -w 1640 -h 1232
 echo "turn on all LEDs"
 # TODO
 #LED front full power:
-sudo python /home/pi/EXCISS/exciss_python_master/python/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wf255
+sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wf255
 
 #LED back full power:
-sudo python /home/pi/EXCISS/exciss_python_master/python/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wb255
+sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wb255
 
 
 
@@ -73,10 +73,10 @@ echo "start ignition"
 echo "stop high frame rate recording"
 
 #LED front off:
-sudo python /home/pi/EXCISS/exciss_python_master/python/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wf0
+sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wf0
 
 #LED back off:
-sudo python /home/pi/EXCISS/exciss_python_master/python/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wb0
+sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c wb0
 
 
 
