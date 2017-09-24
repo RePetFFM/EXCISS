@@ -3,8 +3,11 @@
 # main mission simulation
 # https://github.com/RePetFFM/EXCISS_DOKU/blob/master/EXCISS_mission_timeline.txt
 
+# normal run:
+# ./exciss_mission_main.sh
+#
 # skip ignition:
-# ./exciss_mission_main.sh 
+# ./exciss_mission_main.sh skipIgnition
 
 #########################CONFIG################################
 EXCISS_HOME="/home/pi/EXCISS"
