@@ -165,9 +165,11 @@ def main(argv):
       print waveform
       waveform = waveform.split(',')
       print waveform
+      index=0
       for i in waveform:
         print i
-        waveform[i] = int(i)
+        waveform[index] = int(i)
+        index += 1
     elif opt in ("-s", "--sleep"):
       sleepTime = int(arg)
 
