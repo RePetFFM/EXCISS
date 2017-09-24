@@ -75,9 +75,9 @@ def readSerialCommand():
         out += str(ser.read(1))
 
         if out != '':
-          print "received: " + out
-          logger.info("Received via " + serialPort + ": " + out)
           if '\r\n' in out:
+            print "received: " + out
+            logger.info("Received via " + serialPort + ": " + out)
             listenOnSerial = False
             print "Stop reading on serial port."
 
