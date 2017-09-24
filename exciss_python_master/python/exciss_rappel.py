@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 #
 # Python script to handle the shaker (rappel wackel).
-# Takes a waveform, e.g. 64,64,64,64,14,14,0 and the sleep time as parameters.
+# Takes a waveform, e.g. 64,64,64,64,14,14,0 and 
+# the sleep time in seconds as parameters.
 # 
 # run:
 # sudo python exciss_rappel.py -w "64,64,64,64,14,14,0" -s 3
