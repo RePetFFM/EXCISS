@@ -143,9 +143,11 @@ def main(argv):
   
   if time_string != "":
     if mode == "set":
+      print('Set time and date')
       logger.info('Set time and date')
       sendSerialCommand("wtd" + time_string)
     if mode == "restore":
+      print('Restore time and date')
       logger.info('Restore time and date')
       sendSerialCommand("wtr" + time_string)
   else:
