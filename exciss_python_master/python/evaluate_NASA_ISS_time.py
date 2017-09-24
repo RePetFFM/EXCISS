@@ -51,6 +51,17 @@ def readFile(fileName):
     logger.error('Error reading file: ' + fileName)
     return ""
   return ""
+
+def removeFile(fileName):
+  try:
+    print('Remove file ' + fileName)
+    logger.info('Remove file ' + fileName)
+    os.remove(fileName)
+  except IOError:
+      logger.error('IOError occured when trying to delete ' + fileName)
+  except OSError:
+    logger.error('OSError occured when trying to delete ' + fileName)
+
 #########################FILE#############################
 
 #########################SERIAL###########################
@@ -150,6 +161,8 @@ def main(argv):
       print('Restore time and date')
       logger.info('Restore time and date')
       sendSerialCommand("wtr" + time_string)
+    # remove file when done setting/restoring date and time
+    removeFile(filename)
   else:
     print('Nothing done, no time and date file available: ' + time_string)
     logger.info('Nothing done, no time and date file available: ' + time_string)
