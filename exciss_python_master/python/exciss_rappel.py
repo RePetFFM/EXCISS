@@ -167,6 +167,7 @@ def main(argv):
       print waveform
       for i in waveform:
         print i
+        waveform[i] = int(i)
     elif opt in ("-s", "--sleep"):
       sleepTime = int(arg)
 
