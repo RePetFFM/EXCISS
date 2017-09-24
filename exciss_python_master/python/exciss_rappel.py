@@ -1,5 +1,13 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+#
+# Python script to handle the shaker (rappel wackel).
+# Takes a waveform, e.g. 64,64,64,64,14,14,0 and the sleep time as parameters.
+# 
+# run:
+# sudo python exciss_rappel.py -w "64,64,64,64,14,14,0" -s 3
+#
+
 import smbus
 import time
 import sys, getopt
@@ -12,7 +20,7 @@ import os
 logDirectory = '/home/pi/log'
 if not os.path.exists(logDirectory):
   os.makedirs(logDirectory)
-log_fileHandler = logging.FileHandler('/home/pi/log/'+ 'evaluate_NASA_ISS_time' +'.log')
+log_fileHandler = logging.FileHandler('/home/pi/log/'+ 'exciss_rappel' +'.log')
 
 # logging
 logger = logging.getLogger(str(sys.argv[0]))
@@ -162,12 +170,9 @@ def main(argv):
       sys.exit()
     elif opt in ("-w", "--waveform"):
       waveform = str(arg)
-      print waveform
       waveform = waveform.split(',')
-      print waveform
       index=0
       for i in waveform:
-        print i
         waveform[index] = int(i)
         index += 1
     elif opt in ("-s", "--sleep"):
