@@ -33,10 +33,23 @@ logger.addHandler(log_fileHandler)
 def readFile(fileName):
   try:
     target = open(fileName, 'r')
-    time_string = target.read()
+    time_string = str(target.read())
     target.close()
     print(str(time_string))
-    logger.info('Content of ' + fileName + ': ' + str(time_string))
+    logger.info('Content of ' + fileName + ': ' + time_string)
+
+    '''
+    # split time and date string
+    splitted_time = time_string.split('_')
+    if len(splitted_time) == 6:
+      print('Y ' + splitted_time[0])
+      print('M ' + splitted_time[1])
+      print('D ' + splitted_time[2])
+      print('h ' + splitted_time[3])
+      print('m ' + splitted_time[4])
+      print('s ' + splitted_time[5])
+    '''
+    return time_string
   except OSError: # py2: FileNotFoundError:
     logger.error('Error reading file: ' + fileName)
     return ""
