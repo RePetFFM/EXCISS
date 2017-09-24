@@ -4,6 +4,7 @@ import smbus
 import time
 import sys, getopt
 import logging
+import os
 
 #########################LOGGING##########################
 # log file name is identical to the script name
