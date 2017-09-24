@@ -85,7 +85,6 @@ void loop() {
 
 		CORE__statemachine_ignition();
 
-		DRV2605__shaker_loop();
 	}
 
 	wdt_reset(); // reset watchdog timer
@@ -121,10 +120,6 @@ void CORE__init_pins() {
 	POWERLED_backlight(0);
 }
 
-
-void CORE__init_value_after_powerup() {
-	DRV2605__init_if_required();
-}
 
 void CORE__init_i2c_components() {
 	if (! rtc.begin()) {
@@ -657,6 +652,7 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 				// get time left until next datatransfer start:
 				// command: rtd
 				// returns: returns time left until next datatransfer start in seconds
+				// time_t
 				Serial.println("###");
 			}
 		break;
@@ -666,14 +662,17 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 				// TODO: charging error reporting
 				switch (ignition_status) {
 				    case 0:
-				      Serial.println("standby");
-				      break;
+						Serial.println("standby");
+						break;
 				    case 1:
-				      Serial.println("charging");
-				      break;
+						Serial.println("charging");
+						break;
 				    case 2:
-				      Serial.println("charged");
-				      break;
+						Serial.println("charged");
+						break;
+				    case 255:
+				    	Serial.println("failed");
+				    	break;
 				}
 			}
 		break;
@@ -708,21 +707,14 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 		case 'd':
 			if(buf[1]=='t') { // write date time to RTC. example wdt2017_9_16_20_14_00
 				String str((const char*)&buf[2]);
-				DS3231__set_Time(str);
+				DS3231__set_Time(str,false);
 			}
 			if(buf[1]=='r') { // write date time to RTC. example wdt2017_9_16_20_14_00
 				String str((const char*)&buf[2]);
-				DS3231__set_Time(str);
+				DS3231__set_Time(str,true);
 			}
 		break;
 
-		case 's':
-			if(buf[1]=='e') { // sets vibration motor waveform
-				String str((const char*)&buf[2]);
-				DRV2605__effect_sequence = str;
-				DRV2605__parse_waveform_string_sequence(DRV2605__effect_sequence); // example config "64_64_64_64_64_64_64"
-			}
-		break; 
 	}
 }
 
@@ -731,18 +723,7 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 	long tmpLong;
 	cnt-=4;
 	switch (buf[0]) {
-		case 's':
-			if(buf[1]=='e') {
-				Serial.println("shake enabled");
-				DRV2605__shaker_run = 1;
-			}
-
-			if(buf[1]=='d') {
-				Serial.println("shake disabled");
-				DRV2605__shaker_run = 2;
-			}
-		break;
-
+		
 		case 'r': // serial command "erk300" set the keepalive to 5min
 			if(buf[1]=='k') {
 				buf[0] = ' ';
@@ -811,108 +792,6 @@ char SERIAL__readSingleHex(char c) {
 
 
 
-
-
-//--------------------------------------------------------------
-//--------------------------------------------------------------
-// begin: shaker driver DRV2605
-
-
-void DRV2605__init_if_required() {
-	if(DRV2605__shaker.readRegister8(DRV2605_REG_WAVESEQ1)==0) {
-		DRV2605__init();
-		delay(1);
-	}
-}
-
-
-void DRV2605__init() {
-	// Configuration for DRV2605_Haptic I2C trigger Modus
-	DRV2605__shaker.begin();
-	DRV2605__shaker.setMode(DRV2605_MODE_INTTRIG); // default, internal trigger when sending GO command
-	DRV2605__shaker.selectLibrary(1); // effect library mode
-	DRV2605__shaker.useERM(); // actuactor type set to rotary
-	DRV2605__parse_waveform_string_sequence(DRV2605__effect_sequence); // default value
-}
-
-
-/*
- * Sets the config new.
- */
-void DRV2605__set_effect_waveform(uint8_t form_1, uint8_t form_2, uint8_t form_3, uint8_t form_4, uint8_t form_5, uint8_t form_6, uint8_t form_7 ) {
-	DRV2605__shaker.setWaveform(0, form_1);  
-	DRV2605__shaker.setWaveform(1, form_2);  
-	DRV2605__shaker.setWaveform(2, form_3);  
-	DRV2605__shaker.setWaveform(3, form_4);  
-	DRV2605__shaker.setWaveform(4, form_5);  
-	DRV2605__shaker.setWaveform(5, form_6);  
-	DRV2605__shaker.setWaveform(6, form_7);  // end 
-}
-
-
-/*
- * Runs the DRV2605__shaker.
- */
-bool DRV2605__shaker_loop() {
-	if (DRV2605__shaker_run==1) { 
-		DRV2605__shaker.go();
-	} 
-	if (DRV2605__shaker_run==2) { 
-		DRV2605__shaker.stop();
-		DRV2605__shaker_run = 0;
-	}
-}
-
-
-/*
- * Set a waveform configuration of exactly 7 values of 0-116.
- * Example "64_64_64_64_14_14_0". 0 means stop.
- * The waveform is looped by run_Drv().
- */
-bool DRV2605__parse_waveform_string_sequence (String my_Config) {
-
-	int drv_Config[] = {0,0,0,0,0,0,0};
-
-	//Split String and get Int values
-	int j = 0;
-	int pos = 0;
-	for (int i = 0; i < my_Config.length(); i++) {
-		if ((char)my_Config[i] == '_'&& j<7) {
-			drv_Config[j] = my_Config.substring(pos, i).toInt();
-			j++;
-			pos=i+1;
-			}
-		//Last substring
-		if (i==my_Config.length()-1 && j<7) {
-			drv_Config[j] = my_Config.substring(pos, my_Config.length()).toInt();
-		}
-	}
-
-	//Check if the values are ok
-	bool my_Config_OK = true;
-	if (j!=6) my_Config_OK = false;
-	for (int i=0; i<7;i++){
-		if (drv_Config [i] <0  || drv_Config [i] > 116) my_Config_OK = false;
-	}
-
-	//Set Config
-	if (my_Config_OK) {
-		DRV2605__set_effect_waveform(drv_Config [0],drv_Config [1],drv_Config [2],drv_Config [3],drv_Config [4],drv_Config [5],drv_Config [6]);
-		return 1;
-	} else return 0;
-}
-
-
-
-// end: shaker driver DRV2605
-//..............................................................
-//..............................................................
-
-
-
-
-
-
 //--------------------------------------------------------------
 //--------------------------------------------------------------
 // begin: RTC code DS3231
@@ -953,7 +832,7 @@ long DS3231__get_minute() {
 /*Sets the rtc to a new time. Sring format is: 
  * YYYY_M_D_H_M_S (no leading 0s)
  */
-void DS3231__set_Time(String new_Time) {
+void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
 
 	int rtc_Time[] = {0,0,0,0,0,0};
 
@@ -970,7 +849,13 @@ void DS3231__set_Time(String new_Time) {
 		}
 	}
 
-	if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));
+	if(timeRecoverMode) {
+		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));		
+	} else {
+		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));		
+	}
+
+	
 }
 
 // end: RTC code DS3231
