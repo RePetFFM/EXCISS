@@ -117,7 +117,7 @@ sudo umount /dev/sdb2
 
 echo "send shutdown signal to Arduino via serial"
 # TODO
-sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/serial0 -b 9600 -c "TODO_TURNOFF"
+sudo python ${PYTHON_SCRIPTS}/sendSerialCmd.py -s /dev/ttyAMA0 -b 9600 -c "TODO_TURNOFF"
 
 echo "Shutdown Raspberry Pi"
 #sudo shutdown now
