@@ -7,6 +7,11 @@
 #           systemctl stop systemd-timesyncd
 # description:
 #  The parameter is the day multiplier to shift the time from 2000-01-00T00:00:00
+#  If the script gets an correct date time from the rtc this time is used to
+#  set the os clock.
+#  In case of a problem, the base time 2000-01-00T00:00:00 gets used with a
+#  time shift of the day multiplier. If it is 5 the time is 2000-01-06T00:00:00.
+#  This is used insted of the real time to set the os clock as a fallback.
 #
 # run: sudo ./setRtc.py 5
 
