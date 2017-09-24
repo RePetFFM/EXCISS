@@ -99,7 +99,7 @@ const uint32_t POWERMANAGER_T_WAIT_MAX=5*6*((uint32_t)1000); // maximum distance
 
 // ------------------------------------
 // science operations
-#define SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS		60000*1
+#define SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS		60000*30
 
 
 // ------------------------------------

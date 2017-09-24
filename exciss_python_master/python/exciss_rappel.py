@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 #
 # Python script to handle the shaker (rappel wackel).
-# Takes a waveform, e.g. 64,64,64,64,14,14,0 and the sleep time as parameters.
+# Takes a waveform, e.g. 64,64,64,64,14,14,0 and 
+# the sleep time in seconds as parameters.
 # 
 # run:
 # sudo python exciss_rappel.py -w "64,64,64,64,14,14,0" -s 3
@@ -26,7 +27,7 @@ log_fileHandler = logging.FileHandler('/home/pi/log/'+ 'exciss_rappel' +'.log')
 logger = logging.getLogger(str(sys.argv[0]))
 logger.setLevel(logging.DEBUG)
 log_fileHandler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+formatter = logging.Formatter('%(asctime)s %(levelname)s [pi] %(message)s')
 log_fileHandler.setFormatter(formatter)
 logger.addHandler(log_fileHandler)
 #########################LOGGING##########################

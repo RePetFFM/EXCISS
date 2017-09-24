@@ -31,12 +31,12 @@ log_fileHandler = logging.FileHandler('/home/pi/log/readSerial.log')
 logger = logging.getLogger(str(sys.argv[0]))
 logger.setLevel(logging.DEBUG)
 log_fileHandler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+formatter = logging.Formatter('%(asctime)s %(levelname)s [pi] %(message)s')
 log_fileHandler.setFormatter(formatter)
 logger.addHandler(log_fileHandler)
 #########################LOGGING##########################
 
-serialPort = '/dev/serial0'
+serialPort = '/dev/ttyAMA0'
 baudRate = 9600
 
 def readSerialCommand():
@@ -63,8 +63,6 @@ def readSerialCommand():
 
     logger.info("Serial port: " + ser.name)
 
-    # TODO implement the serial communication here
-
     # send the character to the device
     # (note that I happend a \r\n carriage return and line feed to the characters - this is requested by my device)
     logger.info("Reading from serial port: " + str(serialPort) + '\r\n')
@@ -77,7 +75,7 @@ def readSerialCommand():
         if out != '':
           if '\r\n' in out:
             print out
-            logger.info("Received via " + serialPort + ": " + out)
+            logger.info("[ard]Received via " + serialPort + ": " + out)
             listenOnSerial = False
             print "Stop reading on serial port."
 

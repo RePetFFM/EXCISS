@@ -41,7 +41,7 @@ log_fileHandler = logging.FileHandler('/home/pi/log/mission_cam_cmd.log')
 logger = logging.getLogger(str(sys.argv[0]))
 logger.setLevel(logging.DEBUG)
 log_fileHandler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+formatter = logging.Formatter('%(asctime)s %(levelname)s [pi] %(message)s')
 log_fileHandler.setFormatter(formatter)
 logger.addHandler(log_fileHandler)
 #########################LOGGING##########################
