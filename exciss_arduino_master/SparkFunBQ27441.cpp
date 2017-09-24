@@ -581,6 +581,7 @@ uint8_t BQ27441::readExtendedData(uint8_t classID, uint8_t offset)
 // class ID, position offset.
 bool BQ27441::writeExtendedData(uint8_t classID, uint8_t offset, uint8_t * data, uint8_t len)
 {
+	
 	if (len > 32)
 		return false;
 	
@@ -595,14 +596,15 @@ bool BQ27441::writeExtendedData(uint8_t classID, uint8_t offset, uint8_t * data,
 	computeBlockChecksum(); // Compute checksum going in
 	uint8_t oldCsum = blockDataChecksum();
 
+
 	// Write data bytes:
 	for (int i = 0; i < len; i++)
 	{
 		// Write to offset, mod 32 if offset is greater than 32
 		// The blockDataOffset above sets the 32-bit block
+
 		writeBlockData((offset % 32) + i, data[i]);
 	}
-	
 	// Write new checksum using BlockDataChecksum (0x60)
 	uint8_t newCsum = computeBlockChecksum(); // Compute the new checksum
 	writeBlockChecksum(newCsum);
