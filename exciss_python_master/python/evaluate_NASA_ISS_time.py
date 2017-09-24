@@ -15,6 +15,7 @@ import sys, getopt
 import logging
 import os
 import serial
+import time
 
 #########################LOGGING##########################
 # log file name is identical to the script name
