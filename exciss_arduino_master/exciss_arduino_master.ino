@@ -145,6 +145,13 @@ void CORE__eeprom_write_char(int address,char value) {
 
 void CORE__statemachine_init() {
 
+	static uint32_t laststate = 0;
+	if(laststate!=CORE__init_state) {
+		laststate = CORE__init_state;
+		Serial.print("sm");
+		Serial.println(CORE__init_state);
+	}
+
 	switch (CORE__init_state) {
 		case CORE__INIT_STATE_SET_PWM_FREQ:
 			// set higher pwm frequency for the leds to prevent flicker in video recording
@@ -206,6 +213,7 @@ void CORE__statemachine_main() {
 	static uint32_t laststate = 0;
 	if(laststate!=CORE__main_state) {
 		laststate = CORE__main_state;
+		Serial.print("sm");
 		Serial.println(CORE__main_state);
 	}
 
@@ -300,6 +308,7 @@ void CORE__statemachine_powermanagment() {
 	static uint32_t laststate = 0;
 	if(laststate!=CORE__powermanagment_state) {
 		laststate = CORE__powermanagment_state;
+		Serial.print("sm");
 		Serial.println(CORE__powermanagment_state);
 	}
 	
@@ -310,6 +319,7 @@ void CORE__statemachine_powermanagment() {
 
 		case CORE__POWER_SM_L_IDLE_MODE:
 			if(powermanager_has_command_reload_config()) {
+				Serial.println("reload config");
 				timestamp_recoverymodus_requested = millis();
 				OPERATIONS__force_raspberry_shutdown();
 				CORE__powermanagment_state = CORE__POWER_SM_L_RECOVER_MODE_DELAY;	
@@ -342,6 +352,7 @@ void CORE__statemachine_ignition() {
 	static uint32_t laststate = 0;
 	if(laststate!=CORE__ignition_state) {
 		laststate = CORE__ignition_state;
+		Serial.print("sm");
 		Serial.println(CORE__ignition_state);
 	}
 
@@ -381,7 +392,7 @@ void CORE__statemachine_ignition() {
 		case CORE__IGNITION_SM_T_CHARGE:
 			if(ignition_charging_capacity_target_voltage>0) {
 				chargemonitor_start_charging(ignition_charging_capacity_target_voltage);	
-				ignition_max_charging_runtime = millis() + 300000L; // 300 second max charging time
+				ignition_max_charging_runtime = millis() + CORE_IGNITION_MAX_CHARGTIME_MILLIS; // 300 second max charging time
 				ignition_status = 1;
 				CORE__ignition_state = CORE__IGNITION_SM_L_CHARGE;
 			} else {
@@ -398,7 +409,7 @@ void CORE__statemachine_ignition() {
 		case CORE__IGNITION_SM_L_CHARGE:
 			// charging arc capacitor until requested voltage value
 			ignition_status = 1;
-			Serial.println(chargemonitor_get_charge());
+			// Serial.println(chargemonitor_get_charge());
 			if(chargemonitor_has_enough_charge()) {
 				chargemonitor_stop_charging();
 				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_READY;
@@ -502,6 +513,8 @@ uint8_t TIMEKEEPER__get_current_timeframe() {
 }
 
 void OPERATIONS__force_raspberry_shutdown() {
+	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, HIGH);
+	delay(5);
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, HIGH);
 }
 
@@ -694,6 +707,10 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 
 		case 'd':
 			if(buf[1]=='t') { // write date time to RTC. example wdt2017_9_16_20_14_00
+				String str((const char*)&buf[2]);
+				DS3231__set_Time(str);
+			}
+			if(buf[1]=='r') { // write date time to RTC. example wdt2017_9_16_20_14_00
 				String str((const char*)&buf[2]);
 				DS3231__set_Time(str);
 			}
@@ -908,11 +925,13 @@ String DS3231__get_Time() {
 	DateTime now = rtc.now();
 	String current_Time = String( now.year());
 
-	current_Time += "_" + String( now.month());
-	current_Time += "_" + String( now.day());
-	current_Time += "_" + String( now.hour());
-	current_Time += "_" + String( now.minute());
-	current_Time += "_" + String( now.second());
+	// YYYY-MM-DDThh:mm:ssTZD
+
+	current_Time += "-" + String( now.month());
+	current_Time += "-" + String( now.day());
+	current_Time += "T" + String( now.hour());
+	current_Time += ":" + String( now.minute());
+	current_Time += ":" + String( now.second());
 	return current_Time;
 }
 
