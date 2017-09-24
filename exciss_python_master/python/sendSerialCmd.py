@@ -77,9 +77,9 @@ def sendSerialCommand():
     time.sleep(1)
     while ser.inWaiting() > 0:
       out += str(ser.read(1))
-
       if out != '':
-        print "received: " + out
+        if '\r\n' in out:
+          print out
 
   except serial.SerialException, e:
     logger.error("An exception occured: " + str(e))
