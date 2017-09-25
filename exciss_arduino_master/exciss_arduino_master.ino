@@ -398,7 +398,6 @@ void CORE__statemachine_ignition() {
 				ignition_failure_code = 11;
 				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
 			}
-			
 		break;
 
 		case CORE__IGNITION_SM_L_CHARGE:
@@ -420,15 +419,12 @@ void CORE__statemachine_ignition() {
 				ignition_failure_code = 12;
 				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
 			}
-			
 		break;
 
 		case CORE__IGNITION_SM_T_IGNITION_READY:
-			
 			if(ingition_requested) {
 				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_IGNITE;	
 			}
-			
 		break;
 
 		case CORE__IGNITION_SM_T_IGNITION_IGNITE:
@@ -758,8 +754,6 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 				Serial.println("ABORT");
 			}
 
-
-
 			if(buf[1]=='i') {
 				ingition_requested = true;
 				Serial.println("IGNITE");
@@ -850,9 +844,12 @@ void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
 	}
 
 	if(timeRecoverMode) {
-		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));		
+		if (j<6) {
+			DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]);
+			// rtc.adjust();
+		}
 	} else {
-		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));		
+		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));
 	}
 
 	
