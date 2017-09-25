@@ -845,7 +845,8 @@ void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
 
 	if(timeRecoverMode) {
 		if (j<6) {
-			DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]);
+			uint32_t recover_start_datetime_ut = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).uint32_t();
+			recover_start_datetime.
 			// rtc.adjust();
 		}
 	} else {
