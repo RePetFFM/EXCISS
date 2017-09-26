@@ -2,9 +2,8 @@
 // timekeeper
 
 // configs
-#define CORE__DATATRANSFER_WINDOW_START_HOUR 		18
-#define CORE__DATATRANSFER_WINDOW_END_HOUR 			20
-#define CORE__DATATRANSFER_WINDOW_MARGIN_MINUTE 	10
+#define CORE__DATATRANSFER_WINDOW_START_HOUR 		19
+#define CORE__DATATRANSFER_WINDOW_END_HOUR 			21
 
 #define TIMEKEEPER__DATA_TRANSFER_WINDOW			11
 #define TIMEKEEPER__SCIENCE_WINDOW					22
@@ -42,10 +41,9 @@ const uint32_t POWERMANAGER_T_WAIT_MAX=5*6*((uint32_t)1000); // maximum distance
 
 
 // ------------------------------
-// pinout mapping revision 00D
+// pinout mapping revision 00E
 
 // left side
-#define CORE__PIN_DIN_RASPI_WATCHDOG						3
 #define CORE__PIN_DOUT_MOSFET_5V							4
 #define CORE__PIN_DOUT_MOSFET_8V							5
 #define CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN					6
@@ -59,6 +57,9 @@ const uint32_t POWERMANAGER_T_WAIT_MAX=5*6*((uint32_t)1000); // maximum distance
 #define CORE__PIN_DOUT_BABYSITTER_PGOOD						12
 #define CORE__PIN_DOUT_BABYSITTER_SYSOFF					11
 #define CORE__PIN_PWM_POWERLED_BACK							10
+
+// etc.
+#define CORE__PIN_DEBUG_LED 								13
 
 
 // ------------------------------------
@@ -99,7 +100,9 @@ const uint32_t POWERMANAGER_T_WAIT_MAX=5*6*((uint32_t)1000); // maximum distance
 
 // ------------------------------------
 // science operations
-#define SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS		60000*30
+#define SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS		60000*5
+#define SCIENCE__DEFAULT_WAKEUP_TIMER_MILLIS		60000*30
+#define SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN		1000*30
 
 
 // ------------------------------------
@@ -116,15 +119,13 @@ const uint32_t POWERMANAGER_T_WAIT_MAX=5*6*((uint32_t)1000); // maximum distance
 
 // ------------------------------------
 // main state machine definitions
-#define CORE__MAIN_SM_L_IDLE								2201
-#define CORE__MAIN_SM_T_DATATRANSFER_MODE					2301
-#define CORE__MAIN_SM_L_DATATRANSFER_MODE 					2302
-#define CORE__MAIN_SM_T_DATATRANSFER_MODE_CLOSE_DELAY		2303
-#define CORE__MAIN_SM_T_SCIENCE_GO							2401
-#define CORE__MAIN_SM_T_SCIENCE_GO_DELAY					2402
-#define CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP			2403
-#define CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE				2404
-#define CORE__MAIN_SM_T_SCIENCE_SHUTDOWN					2405
+#define CORE__MAIN_SM_T_INIT_IDLE_MODE						2001
+#define CORE__MAIN_SM_L_IDLE								2101
+#define CORE__MAIN_SM_T_SCIENCE_GO							2201
+#define CORE__MAIN_SM_T_SCIENCE_GO_DELAY					2202
+#define CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP			2203
+#define CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE				2204
+#define CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY				2205
 
 
 // ------------------------------------

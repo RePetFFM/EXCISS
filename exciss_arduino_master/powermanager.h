@@ -11,6 +11,9 @@ uint8_t powermanager_has_command_reload_config();
 uint32_t powermanager_current_time(); // in seconds since reference time
 
 // power state
+uint16_t powermanager_get_voltage();
+uint16_t powermanager_get_capacity();
+uint8_t powermanager_get_usb_power_status();
 uint8_t powermanager_has_power_for_experiment(); // minimum battery level and power good
 uint8_t powermanager_has_power_for_small_things(); // minimum battery level
 

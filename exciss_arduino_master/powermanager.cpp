@@ -25,6 +25,19 @@ uint16_t powermanager_get_charge_state()
 {
 	return lipo.soc();
 }
+
+uint16_t powermanager_get_voltage() {
+	return lipo.voltage();
+}
+
+uint16_t powermanager_get_capacity() {
+	return lipo.capacity(REMAIN);
+}
+
+uint8_t powermanager_get_usb_power_status() {
+	return get_pgood();
+}
+
 void powermanager_poll()
 {
 	// check power cycles

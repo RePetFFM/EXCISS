@@ -47,7 +47,7 @@ char init_i2c_failure_codes[3];// failure code variales
 char init_failure_code = 0;
 
 // main state machine
-uint32_t CORE__main_state = CORE__MAIN_SM_L_IDLE; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+uint32_t CORE__main_state = CORE__MAIN_SM_T_INIT_IDLE_MODE; // the state char are mirrord 4bit values. For example the 4bit value 0101 
 uint8_t CORE__statemachine_retry = 0;
 
 // powermanagment state machine
@@ -62,7 +62,7 @@ char ignition_failure_code = 0;  // 00 - FF
 uint8_t ignition_status = 0;
 
 unsigned long science_computer_keepalive_timer;
-unsigned long science_computer_wakup_timer;
+unsigned long science_computer_wakeup_timer;
 
 uint8_t ingition_requested = 0;
 
@@ -99,9 +99,9 @@ void CORE__init_pins() {
 	pinMode(0, INPUT_PULLUP);
 
 	// left side
-	pinMode(CORE__PIN_DIN_RASPI_WATCHDOG, INPUT);
 	pinMode(CORE__PIN_DOUT_MOSFET_5V, OUTPUT);
 	pinMode(CORE__PIN_DOUT_MOSFET_8V, OUTPUT);
+	pinMode(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, OUTPUT);
 	pinMode(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, OUTPUT);
 	pinMode(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, OUTPUT);
 	pinMode(CORE__PIN_PWM_POWERLED_FRONT, OUTPUT);
@@ -111,16 +111,23 @@ void CORE__init_pins() {
 	pinMode(CORE__PIN_DOUT_BABYSITTER_SYSOFF, OUTPUT);
 	pinMode(CORE__PIN_PWM_POWERLED_BACK, OUTPUT);
 
+	// etc
+	pinMode(CORE__PIN_DEBUG_LED, OUTPUT);
+	
+
 	// initial pin state
 	digitalWrite(CORE__PIN_DOUT_MOSFET_5V, LOW);
 	digitalWrite(CORE__PIN_DOUT_MOSFET_8V, LOW);
+	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
 	digitalWrite(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, LOW);
 	digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, LOW);
 	POWERLED_frontlight(0);
 
-	digitalWrite(CORE__PIN_DOUT_USB_SWITCH_SWITCH, USBSWITCH__SWITCH_TRANSFER);
+	USB_DATASWITCH_switch_to_transfer_mode();
 	digitalWrite(CORE__PIN_DOUT_BABYSITTER_SYSOFF, HIGH);
 	POWERLED_backlight(0);
+
+	digitalWrite(CORE__PIN_DEBUG_LED, LOW);
 }
 
 
@@ -216,20 +223,28 @@ void CORE__statemachine_main() {
 	}
 
 	switch (CORE__main_state) {
+		case CORE__MAIN_SM_T_INIT_IDLE_MODE:
+			// turn off all component not required for idle mode
+
+			powermanager_8V_off();
+			powermanager_5V_off();
+			// ignition_armed = 0x5A;
+			OPERATIONS__force_raspberry_shutdown_init();
+			USB_DATASWITCH_switch_to_transfer_mode();
+			CORE__main_state = CORE__MAIN_SM_L_IDLE;
+		break;
 		
 		case CORE__MAIN_SM_L_IDLE:
 			// Serial.println(TIMEKEEPER__get_current_timeframe());
 			switch(TIMEKEEPER__get_current_timeframe()) {
 				case TIMEKEEPER__DATA_TRANSFER_WINDOW:
 					USB_DATASWITCH_switch_to_transfer_mode();
-					CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE;
 				break;
 
 				case TIMEKEEPER__SCIENCE_WINDOW:
-					
 					if(powermanager_has_power_for_experiment()) {
 						// TODO!!! Check for minimum execution time until transfer time frame 
-						if(millis()>science_computer_wakup_timer) {
+						if(millis()>science_computer_wakeup_timer) {
 							CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO;	
 						}
 					}
@@ -237,23 +252,6 @@ void CORE__statemachine_main() {
 			}
 		break;
 
-		case CORE__MAIN_SM_T_DATATRANSFER_MODE:
-			USB_DATASWITCH_switch_to_transfer_mode();
-			CORE__main_state = CORE__MAIN_SM_L_DATATRANSFER_MODE;
-		break;
-
-		case CORE__MAIN_SM_L_DATATRANSFER_MODE:
-			if(TIMEKEEPER__get_current_timeframe()==TIMEKEEPER__SCIENCE_WINDOW) {
-				CORE__main_state = CORE__MAIN_SM_T_DATATRANSFER_MODE_CLOSE_DELAY;
-				main_statemachine_delay = millis()+100;
-			}
-		break;
-
-		case CORE__MAIN_SM_T_DATATRANSFER_MODE_CLOSE_DELAY:
-			if(millis()>=main_statemachine_delay) {
-				CORE__ignition_state = CORE__MAIN_SM_L_IDLE;
-			}
-		break;
 		
 		case CORE__MAIN_SM_T_SCIENCE_GO:
 			// switch USB to raspberry pi
@@ -274,27 +272,38 @@ void CORE__statemachine_main() {
 			// powering up 5V switched power rail. The raspberry pi will begin with booting
 			// ignition_armed = 0xA5;
 			science_computer_keepalive_timer = millis()+SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS;
-			digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
+			OPERATIONS__force_raspberry_shutdown_init();
+
 			powermanager_5V_on();
+
+			CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
+
 			CORE__main_state = CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE;
 		break;
 
-		
 		case CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE:
 			if(millis()>science_computer_keepalive_timer) {
-				CORE__main_state = CORE__MAIN_SM_T_SCIENCE_SHUTDOWN;
+				OPERATIONS__force_raspberry_shutdown();
+
+				CORE__ignition_state = CORE__IGNITION_SM_T_INIT;
+
+				main_statemachine_delay = millis() + SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN;
+
+				CORE__main_state = CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY;
 			}
 		break;
 
-		case CORE__MAIN_SM_T_SCIENCE_SHUTDOWN:
-			// turn off all component not required for idle mode
-			powermanager_8V_off();
-			powermanager_5V_off();
-			digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
-			// ignition_armed = 0x5A;
-			USB_DATASWITCH_switch_to_transfer_mode();
-			CORE__main_state = CORE__MAIN_SM_L_IDLE;
+		case CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY:
+			if(millis()>main_statemachine_delay) {
+				CORE__main_state = CORE__MAIN_SM_T_INIT_IDLE_MODE;
+				if(millis()>science_computer_wakeup_timer) {
+					// if wakeup timer not set, set default timer. 
+					science_computer_wakeup_timer = millis() + SCIENCE__DEFAULT_WAKEUP_TIMER_MILLIS;
+				}
+			}
 		break;
+
+		
 	}
 }
 
@@ -491,27 +500,38 @@ void CORE__statemachine_ignition() {
 // begin: operations routines
 
 uint8_t TIMEKEEPER__get_current_timeframe() {
-
-	return TIMEKEEPER__SCIENCE_WINDOW;
-
 	if(DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_START_HOUR && DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_END_HOUR) {
 		return TIMEKEEPER__DATA_TRANSFER_WINDOW;
 	}
-	// if it is time for science execution and power state is good, start science bootup sequence
 	
-	if((DS3231__get_hour()>=0 && DS3231__get_hour()<=CORE__DATATRANSFER_WINDOW_START_HOUR) || (DS3231__get_hour()>=CORE__DATATRANSFER_WINDOW_END_HOUR && DS3231__get_hour()<=23)) {
-		if(DS3231__get_minute()>=0 && DS3231__get_minute()<=3) {
-			return TIMEKEEPER__SCIENCE_WINDOW;
-		}
-	}
+	return TIMEKEEPER__SCIENCE_WINDOW;
 }
+
+
+uint32_t TIMEKEEPER__get_deltaT_to_next_datatransfer_seconds() {
+	DateTime cdt = rtc.now();
+	uint32_t current_date_time_ut = DS3231__get_unixtime();
+
+	if(DS3231__get_hour()>CORE__DATATRANSFER_WINDOW_END_HOUR) {
+		return DateTime(cdt.year(),cdt.month(),cdt.day()+1,CORE__DATATRANSFER_WINDOW_START_HOUR,0,0).unixtime()-current_date_time_ut;
+	}
+
+	if(DS3231__get_hour()<CORE__DATATRANSFER_WINDOW_START_HOUR) {
+		return DateTime(cdt.year(),cdt.month(),cdt.day(),CORE__DATATRANSFER_WINDOW_START_HOUR,0,0).unixtime()-current_date_time_ut;
+	}
+
+	return 0;
+}
+
+
 
 void OPERATIONS__force_raspberry_shutdown() {
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, HIGH);
-	delay(5);
-	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, HIGH);
 }
 
+void OPERATIONS__force_raspberry_shutdown_init() {
+	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
+}
 
 // end: operations routines
 //..............................................................
@@ -575,6 +595,79 @@ void POWERLED_backlight(int pwm_duty_circle) {
 //..............................................................
 
 
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+// begin: RTC code DS3231
+
+/*Returns the RTC Time as String YYYY_M_D_H_M_S*/
+String DS3231__get_Time() {
+	DateTime now = rtc.now();
+	String current_Time = String( now.year());
+
+	// YYYY-MM-DDThh:mm:ssTZD
+
+	current_Time += "-" + String( now.month());
+	current_Time += "-" + String( now.day());
+	current_Time += "T" + String( now.hour());
+	current_Time += ":" + String( now.minute());
+	current_Time += ":" + String( now.second());
+	return current_Time;
+}
+
+uint32_t DS3231__get_unixtime() {
+	DateTime now = rtc.now();
+	return now.unixtime();
+}
+
+long DS3231__get_hour() {
+	DateTime now = rtc.now();
+	return now.hour();
+}
+
+long DS3231__get_minute() {
+	DateTime now = rtc.now();
+	return now.minute();
+}
+
+/*Sets the rtc to a new time. Sring format is: 
+ * YYYY_M_D_H_M_S (no leading 0s)
+ */
+void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
+
+	int rtc_Time[] = {0,0,0,0,0,0};
+
+	int j = 0;
+	int pos = 0;
+	for (int i = 0; i < new_Time.length(); i++) {
+		if ((char)new_Time[i] == '_'&& j<6) {
+			rtc_Time[j] = new_Time.substring(pos, i).toInt();
+			j++;
+			pos=i+1;
+		}
+		if (i==new_Time.length()-1&& j<6) {
+			rtc_Time[j] =  new_Time.substring(pos, new_Time.length()).toInt();
+		}
+	}
+
+	if(timeRecoverMode) {
+		if (j<6) {
+			// uint32_t recover_start_datetime_ut = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).uint32_t();
+			// recover_start_datetime_ut + recover_mode_last_entered_ut;
+			// rtc.adjust();
+		}
+	} else {
+		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));
+	}
+
+	
+}
+
+// end: RTC code DS3231
+//..............................................................
+//..............................................................
+
+
+
 
 //--------------------------------------------------------------
 //--------------------------------------------------------------
@@ -586,7 +679,7 @@ void SERIAL__Parser() {
 	static uint8_t cmdcount = 0;    // position in the buffer of the received byte
 	uint8_t c;                      // received byte
 	while(Serial.available()) {
-		digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, HIGH);
+		digitalWrite(CORE__PIN_DEBUG_LED, HIGH);
 		c = Serial.read();
 		if(c > ' ') cmd[cmdcount++] = c;
 		if((c == 8) && (cmdcount > 0)) cmdcount--;                // deals with backspaces, if a person on the other side types 
@@ -606,7 +699,7 @@ void SERIAL__Parser() {
 				}    
 			}
 			cmdcount = 0;
-			digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, LOW);
+			digitalWrite(CORE__PIN_DEBUG_LED, LOW);
 		} 
 	}
 }
@@ -633,23 +726,39 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 			Serial.println("h");
 		break;
 
-		case 'v':
-			if(buf[1]=='b') {
+		case 'b':
+			if(buf[1]=='v') {
 				// get batterie volate:
-				// command: rvb
-				// returns: voltage in integer value. the value must be divided by 100 to get the real float value.
-				Serial.println("###");
+				// command: rbv
+				// returns: voltage in integer value.
+				Serial.println(powermanager_get_voltage());
+			}
+
+			if(buf[1]=='c') {
+				// get batterie capacity:
+				// command: rbc
+				// returns: milliamper in integer value. 
+				Serial.println(powermanager_get_capacity());
+			}
+		break;
+
+		case 'u':
+			if(buf[1]=='s') {
+				// get usb power status:
+				// command: rus
+				// returns: FRAME POWER ONLINE / FRAME POWER OFFLINE
+				powermanager_get_usb_power_status() ? Serial.println("FRAME POWER ONLINE") : Serial.println("FRAME POWER OFFLINE");				
 			}
 		break;
 
 
 		case 't':
-			if(buf[1]=='d') {
+			if(buf[1]=='l') {
 				// get time left until next datatransfer start:
 				// command: rtd
 				// returns: returns time left until next datatransfer start in seconds
 				// time_t
-				Serial.println("###");
+				Serial.println(TIMEKEEPER__get_deltaT_to_next_datatransfer_seconds());
 			}
 		break;
 
@@ -733,7 +842,7 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 				buf[0] = ' ';
 				buf[1] = ' ';
 				tmpLong = atoi((const char*)&buf[2]);
-				science_computer_wakup_timer = millis()+(1000*tmpLong);
+				science_computer_wakeup_timer = millis()+(1000*tmpLong);
 				Serial.println(tmpLong);
 				Serial.println("Wakeuptimer set");
 			}
@@ -786,77 +895,4 @@ char SERIAL__readSingleHex(char c) {
 
 
 
-//--------------------------------------------------------------
-//--------------------------------------------------------------
-// begin: RTC code DS3231
-
-
-
-
-/*Returns the RTC Time as String YYYY_M_D_H_M_S*/
-String DS3231__get_Time() {
-	DateTime now = rtc.now();
-	String current_Time = String( now.year());
-
-	// YYYY-MM-DDThh:mm:ssTZD
-
-	current_Time += "-" + String( now.month());
-	current_Time += "-" + String( now.day());
-	current_Time += "T" + String( now.hour());
-	current_Time += ":" + String( now.minute());
-	current_Time += ":" + String( now.second());
-	return current_Time;
-}
-
-long DS3231__get_unixtime() {
-	DateTime now = rtc.now();
-	return now.unixtime();
-}
-
-long DS3231__get_hour() {
-	DateTime now = rtc.now();
-	return now.hour();
-}
-
-long DS3231__get_minute() {
-	DateTime now = rtc.now();
-	return now.minute();
-}
-
-/*Sets the rtc to a new time. Sring format is: 
- * YYYY_M_D_H_M_S (no leading 0s)
- */
-void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
-
-	int rtc_Time[] = {0,0,0,0,0,0};
-
-	int j = 0;
-	int pos = 0;
-	for (int i = 0; i < new_Time.length(); i++) {
-		if ((char)new_Time[i] == '_'&& j<6) {
-			rtc_Time[j] = new_Time.substring(pos, i).toInt();
-			j++;
-			pos=i+1;
-		}
-		if (i==new_Time.length()-1&& j<6) {
-			rtc_Time[j] =  new_Time.substring(pos, new_Time.length()).toInt();
-		}
-	}
-
-	if(timeRecoverMode) {
-		if (j<6) {
-			// uint32_t recover_start_datetime_ut = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).uint32_t();
-			// recover_start_datetime_ut + recover_mode_last_entered_ut;
-			// rtc.adjust();
-		}
-	} else {
-		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));
-	}
-
-	
-}
-
-// end: RTC code DS3231
-//..............................................................
-//..............................................................
 
