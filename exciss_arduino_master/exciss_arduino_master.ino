@@ -95,6 +95,9 @@ void loop() {
 // begin: Core
 
 void CORE__init_pins() {
+
+	pinMode(0, INPUT_PULLUP);
+
 	// left side
 	pinMode(CORE__PIN_DIN_RASPI_WATCHDOG, INPUT);
 	pinMode(CORE__PIN_DOUT_MOSFET_5V, OUTPUT);
@@ -577,37 +580,34 @@ void POWERLED_backlight(int pwm_duty_circle) {
 //--------------------------------------------------------------
 // begin: Serial communication functions
 
+
 void SERIAL__Parser() {
-	uint8_t c;	
+	static uint8_t cmd[32];         // command buffer
+	static uint8_t cmdcount = 0;    // position in the buffer of the received byte
+	uint8_t c;                      // received byte
 	while(Serial.available()) {
+		digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, HIGH);
 		c = Serial.read();
-		SERIAL__CMDParser(c);
-	}
-}
-
-
-void SERIAL__CMDParser(char c) {
-	static char buf[32];
-	static uint8_t bufcnt = 0;
-	static uint8_t bufcntcmd = 0;
-	buf[bufcnt++] = c;
-	if(c!=0x0a && c!=0x0d) bufcntcmd++;
-
-	if((c == 0x0a) || (bufcnt >= 30)) { // (c == 0x0d) ||
-		switch(buf[0]) {
-			case 'w': // write
-				SERIAL__ParserWrite(&buf[1],bufcntcmd);
-			break;
-			case 'r': // read
-				SERIAL__ParserRead(&buf[1],bufcntcmd);
-			break;
-			case 'e': // execute
-				SERIAL__ParserExecute(&buf[1],bufcntcmd);
-			break;
-		}
-
-		bufcnt = 0;
-		bufcntcmd = 0;
+		if(c > ' ') cmd[cmdcount++] = c;
+		if((c == 8) && (cmdcount > 0)) cmdcount--;                // deals with backspaces, if a person on the other side types 
+		if((c == 0x0d) || (c == 0x0a) || (cmdcount > 32)) {       // end of command, gets interpreted now
+			cmd[cmdcount] = 0;    // clear the last byte in cmd buffer
+			if(cmdcount > 2) {    // prevent empty cmd buffer parsing
+				switch(cmd[0]) {
+					case 'w': // write
+					SERIAL__ParserWrite(&cmd[1],cmdcount);
+					break;
+					case 'r': // read
+					SERIAL__ParserRead(&cmd[1],cmdcount);
+					break;
+					case 'e': // execute
+					SERIAL__ParserExecute(&cmd[1],cmdcount);
+					break;           
+				}    
+			}
+			cmdcount = 0;
+			digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, LOW);
+		} 
 	}
 }
 
@@ -845,8 +845,8 @@ void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
 
 	if(timeRecoverMode) {
 		if (j<6) {
-			uint32_t recover_start_datetime_ut = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).uint32_t();
-			recover_start_datetime.
+			// uint32_t recover_start_datetime_ut = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).uint32_t();
+			// recover_start_datetime_ut + recover_mode_last_entered_ut;
 			// rtc.adjust();
 		}
 	} else {
