@@ -1,6 +1,6 @@
 
 uint8_t powermanager_begin();
-void powermanager_poll();
+void powermanager_poll_powercycle_command();
 
 // power-cycle command requests
 uint8_t powermanager_has_command_powerdown();
@@ -26,3 +26,6 @@ void powermanager_8V_on();
 void powermanager_8V_off();
 void powermanager_5V_on();
 void powermanager_5V_off();
+
+void powermanager_vsys_on();
+void powermanager_vsys_off();

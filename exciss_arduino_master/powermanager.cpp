@@ -4,131 +4,194 @@
 
 uint8_t powermanager_status = 0;
 uint64_t last_timeref_millis = 0;
-uint8_t last_state = 0;
-uint64_t last_down_flank = 0;
-uint64_t last_cycle_end = 0;
-uint8_t cycle_count = 0;
+
+uint8_t powermanager_shutdown_request = 0xA5;
 
 inline uint8_t get_pgood()
 {
-	return digitalRead(CORE__PIN_DOUT_BABYSITTER_PGOOD) == LOW;
+    return digitalRead(CORE__PIN_DOUT_BABYSITTER_PGOOD) == LOW;
 }
 
 uint8_t powermanager_begin()
 {
-	pinMode(CORE__PIN_DOUT_BABYSITTER_PGOOD, INPUT_PULLUP);
-	lipo.begin();
-	lipo.setCapacity(POWERMANAGER_CELL_CAPACITY);
-	return true;
+    pinMode(CORE__PIN_DOUT_BABYSITTER_PGOOD, INPUT_PULLUP);
+    lipo.begin();
+    lipo.setCapacity(POWERMANAGER_CELL_CAPACITY);
+    return true;
 }
 uint16_t powermanager_get_charge_state()
 {
-	return lipo.soc();
+    return lipo.soc();
 }
 
 uint16_t powermanager_get_voltage() {
-	return lipo.voltage();
+    return lipo.voltage();
 }
 
 uint16_t powermanager_get_capacity() {
-	return lipo.capacity(REMAIN);
+    return lipo.capacity(REMAIN);
 }
 
 uint8_t powermanager_get_usb_power_status() {
-	return get_pgood();
+    return get_pgood();
 }
 
-void powermanager_poll()
+// power switching
+void powermanager_8V_on() {
+    digitalWrite(CORE__PIN_DOUT_MOSFET_8V,HIGH);
+}
+
+void powermanager_8V_off() {
+    digitalWrite(CORE__PIN_DOUT_MOSFET_8V,LOW); 
+}
+
+void powermanager_5V_on() {
+    digitalWrite(CORE__PIN_DOUT_MOSFET_5V,HIGH);
+}
+
+void powermanager_5V_off() {
+    digitalWrite(CORE__PIN_DOUT_MOSFET_5V,LOW); 
+}
+
+void powermanager_vsys_on() {
+    digitalWrite(CORE__PIN_DOUT_BABYSITTER_SYSOFF, HIGH);
+}
+
+void powermanager_vsys_off() {
+    digitalWrite(CORE__PIN_DOUT_BABYSITTER_SYSOFF, LOW);
+}
+
+void powermanager_poll_powercycle_command()
 {
-	// check power cycles
-	uint8_t pgood = get_pgood();
-	if(pgood != last_state)
-	{
-		if(pgood) // up flank
-		{
-			uint64_t down_time = millis() - last_down_flank;
-			if( (down_time > POWERMANAGER_T_OFF_MIN) && (down_time < POWERMANAGER_T_OFF_MAX) )
-			{
-				cycle_count++;
-				last_cycle_end = millis();
-			}
-		}
-		else // down flank
-		{
-			last_down_flank = millis();
-		}
-		last_state = pgood;
-	}
+    static uint32_t usb_power_status = 0;
+    static uint32_t previous_usb_power_status = 0;
+    static uint32_t last_level_change_millis;
+    static uint8_t power_cycle_count = 0;
+    static uint8_t power_cycle_valid_command_count = 0;
+    static uint32_t next_interval_millis;
+    static uint32_t last_power_good_millis;
 
-	if(cycle_count > 0)
-	{
-		if(millis() - last_cycle_end > POWERMANAGER_T_WAIT_MAX) // end of command
-		{
-			if(cycle_count == POWERMANAGER_N_POWERDOWN)
-				powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_POWERDOWN);
+    uint32_t dt_last_level_change_millis;
+    uint8_t pgood = get_pgood();
+    
 
-			if(cycle_count == POWERMANAGER_N_RELOADCONFIG)
-				powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
+    if(pgood) {
+        usb_power_status = (usb_power_status<<1) | 1;
+    } else {
+        usb_power_status = usb_power_status<<1;
+    }
 
-			if(cycle_count == POWERMANAGER_N_TIMEREF)
-			{
-				powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_TIMEREF);
-				last_timeref_millis = millis();
-			}
-			cycle_count = 0;
-		}
-	}
+    if((usb_power_status==0xFFFFFFFF || usb_power_status==0) && usb_power_status != previous_usb_power_status)
+    {
+        previous_usb_power_status = usb_power_status;
+
+        dt_last_level_change_millis = millis() - last_level_change_millis;
+
+        if(power_cycle_count==0 && usb_power_status==0xFFFFFFFF) {
+            next_interval_millis = millis() + POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS;    
+        }
+        
+
+        last_level_change_millis = millis();
+
+        power_cycle_count++;
+
+        Serial.print("PGOOD: ");
+        Serial.print(usb_power_status,HEX);
+        Serial.print("PC: ");
+        Serial.println(power_cycle_count);
+        
+        
+
+        if(usb_power_status==0xFFFFFFFF) {
+            last_power_good_millis = 0;
+        } else {
+            last_power_good_millis = millis();
+        }
+    }
+
+    if(next_interval_millis>0 && millis()>=next_interval_millis) {
+        next_interval_millis = millis() + POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS;
+        if( next_interval_millis-POWERMANAGER_POWERCYCLE_MARGIN_MILLIS>millis() 
+            && next_interval_millis+POWERMANAGER_POWERCYCLE_MARGIN_MILLIS<millis() ) {
+            power_cycle_valid_command_count++;
+            Serial.print("valid count");
+            Serial.println(power_cycle_valid_command_count);
+        }
+    }
+
+    if(last_level_change_millis > 0)
+    {
+        if(millis()>= (last_level_change_millis+POWERMANAGER_POWERCYCLE_END_DELAY_MILLIS)) // end of command
+        {
+
+            Serial.print("max wait time until next command reached ");
+            Serial.println(last_level_change_millis);
+            if(power_cycle_valid_command_count == POWERMANAGER_N_RELOADCONFIG) {
+                Serial.println("RELOAD CONFIG REQUEST");
+                powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
+            }
+             
+            power_cycle_count = 0;
+            last_level_change_millis = 0;
+            power_cycle_valid_command_count = 0;
+            powermanager_shutdown_request = 0xA5;
+        }
+    }
+    
+    if(power_cycle_valid_command_count > POWERMANAGER_N_MAX_CYCLE || power_cycle_count > POWERMANAGER_N_MAX_CYCLE)
+    {
+        Serial.println("too many cycles");
+        power_cycle_count = 0;
+        last_level_change_millis = 0;
+        power_cycle_valid_command_count = 0;
+        powermanager_shutdown_request = 0xA5;
+    }
+
+    if(last_power_good_millis>0 && millis()>(last_power_good_millis+POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS)) {
+        Serial.println("FORCE POWER DOWN DUE TO USB POWER DOWN");
+        power_cycle_count = 0;
+        last_level_change_millis = 0;
+        powermanager_shutdown_request = 0x5A;
+        powermanager_8V_off();
+        powermanager_5V_off();
+        powermanager_vsys_off();
+    }
 }
 
 // power-cycle command requests
 uint8_t powermanager_has_command_powerdown()
 {
-	uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_POWERDOWN);
-	powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_POWERDOWN);
-	return result;
+    uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_POWERDOWN);
+    powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_POWERDOWN);
+    return result;
 }
 uint8_t powermanager_has_new_reference_time()
 {
-	uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_TIMEREF);
-	powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_TIMEREF);
-	return result;
+    uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_TIMEREF);
+    powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_TIMEREF);
+    return result;
 }
 uint8_t powermanager_has_command_reload_config()
 {
-	uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
-	powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
-	return result;
+    uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
+    powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
+    return result;
 }
 
 // misc
 uint32_t powermanager_current_time() // in seconds since 0:00:00
 {
-	return (millis() - last_timeref_millis) / 1000;
+    return (millis() - last_timeref_millis) / 1000;
 }
 
 // power state
 uint8_t powermanager_has_power_for_experiment()
 { // minimum battery level and power good
-	return (powermanager_get_charge_state() >= POWERMANAGER_EXPERIMENT_MIN_CHARGE) && get_pgood();
+    return (powermanager_get_charge_state() >= POWERMANAGER_EXPERIMENT_MIN_CHARGE) && get_pgood();
 }
 uint8_t powermanager_has_power_for_small_things()
-{	// minimum battery level
-	return (powermanager_get_charge_state() >= POWERMANAGER_SMALLTHINGS_MIN_CHARGE) && get_pgood();
+{   // minimum battery level
+    return (powermanager_get_charge_state() >= POWERMANAGER_SMALLTHINGS_MIN_CHARGE) && get_pgood();
 }
 
-// power switching
-void powermanager_8V_on() {
-	digitalWrite(CORE__PIN_DOUT_MOSFET_8V,HIGH);
-}
-
-void powermanager_8V_off() {
-	digitalWrite(CORE__PIN_DOUT_MOSFET_8V,LOW);	
-}
-
-void powermanager_5V_on() {
-	digitalWrite(CORE__PIN_DOUT_MOSFET_5V,HIGH);
-}
-
-void powermanager_5V_off() {
-	digitalWrite(CORE__PIN_DOUT_MOSFET_5V,LOW);	
-}

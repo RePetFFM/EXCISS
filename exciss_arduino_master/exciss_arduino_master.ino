@@ -75,13 +75,16 @@ void loop() {
 
 	if(CORE__init_done == CORE__INIT_DONE) {
 		// Serial.println(CORE__main_state);
-		powermanager_poll();
+		powermanager_poll_powercycle_command();
 
 		SERIAL__Parser();
 
-		CORE__statemachine_main();
 
 		CORE__statemachine_powermanagment();
+
+
+		CORE__statemachine_main();
+
 
 		CORE__statemachine_ignition();
 
@@ -124,7 +127,7 @@ void CORE__init_pins() {
 	POWERLED_frontlight(0);
 
 	USB_DATASWITCH_switch_to_transfer_mode();
-	digitalWrite(CORE__PIN_DOUT_BABYSITTER_SYSOFF, HIGH);
+	powermanager_vsys_on();
 	POWERLED_backlight(0);
 
 	digitalWrite(CORE__PIN_DEBUG_LED, LOW);
@@ -333,7 +336,6 @@ void CORE__statemachine_powermanagment() {
 				delayTimer = millis() + 60000*3;
 			}
 		break;
-
 		
 		case CORE__POWER_SM_L_RECOVER_MODE_DELAY:
 			if(millis()>delayTimer) {
@@ -762,6 +764,17 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 			}
 		break;
 
+
+		case 'i':
+			if(buf[1]=='v') {
+				// get current capacitor voltage
+				// command: riv
+				// returns: returns capacitor voltage
+				Serial.println(chargemonitor_get_charge());
+			}
+		break;
+
+
 		case 'c':
 			if(buf[1]=='r') {
 				// TODO: charging error reporting
@@ -868,8 +881,6 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 				Serial.println("IGNITE");
 			}
 		break;
-
-
 
 	}
 }
