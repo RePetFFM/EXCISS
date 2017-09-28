@@ -335,6 +335,10 @@ void CORE__statemachine_powermanagment() {
 				CORE__powermanagment_state = CORE__POWER_SM_L_RECOVER_MODE_DELAY;	
 				delayTimer = millis() + 60000*3;
 			}
+
+			if(powermanager_shutdown_requested()==0x5A) {
+				OPERATIONS__force_raspberry_shutdown();
+			}
 		break;
 		
 		case CORE__POWER_SM_L_RECOVER_MODE_DELAY:
@@ -378,11 +382,11 @@ void CORE__statemachine_ignition() {
 		break;
 
 		case CORE__IGNITION_SM_L_OFF:
-			// if(ignition_armed==0xA5) {
+			if(CORE__main_state==CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE) {
 				ignition_requested_charging_voltage = 0;
 				ignition_charging_capacity_target_voltage = 0;
 				CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
-			// }
+			}
 		break;
 
 		case CORE__IGNITION_SM_L_IDLE:
@@ -725,7 +729,13 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 			// command: rh
 			// parameter: none
 			// returns: system health data from arduino
-			Serial.println("h");
+			Serial.println("MCU health log");
+			Serial.print("bat v: ");
+			Serial.print(powermanager_get_voltage());
+			Serial.print("bat a: ");
+			Serial.println(powermanager_get_capacity());
+			Serial.print("frame power: ");
+			powermanager_get_usb_power_status() ? Serial.println("FRAME POWER ONLINE") : Serial.println("FRAME POWER OFFLINE");				
 		break;
 
 		case 'b':

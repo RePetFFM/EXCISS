@@ -87,7 +87,7 @@ void powermanager_poll_powercycle_command()
 
         dt_last_level_change_millis = millis() - last_level_change_millis;
 
-        if(power_cycle_count==0 && usb_power_status==0xFFFFFFFF) {
+        if(power_cycle_count==0 && usb_power_status==0) {
             next_interval_millis = millis() + POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS;    
         }
         
@@ -100,7 +100,16 @@ void powermanager_poll_powercycle_command()
         Serial.print(usb_power_status,HEX);
         Serial.print("PC: ");
         Serial.println(power_cycle_count);
-        
+    
+        if(next_interval_millis>0 && power_cycle_count>1) {
+            Serial.println(next_interval_millis);
+            if( millis()>next_interval_millis-POWERMANAGER_POWERCYCLE_MARGIN_MILLIS
+                && next_interval_millis+POWERMANAGER_POWERCYCLE_MARGIN_MILLIS<millis() ) {
+                power_cycle_valid_command_count++;
+                Serial.print("valid count");
+                Serial.println(power_cycle_valid_command_count);
+            }
+        }    
         
 
         if(usb_power_status==0xFFFFFFFF) {
@@ -110,15 +119,10 @@ void powermanager_poll_powercycle_command()
         }
     }
 
-    if(next_interval_millis>0 && millis()>=next_interval_millis) {
+    if(millis()>=next_interval_millis){
         next_interval_millis = millis() + POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS;
-        if( next_interval_millis-POWERMANAGER_POWERCYCLE_MARGIN_MILLIS>millis() 
-            && next_interval_millis+POWERMANAGER_POWERCYCLE_MARGIN_MILLIS<millis() ) {
-            power_cycle_valid_command_count++;
-            Serial.print("valid count");
-            Serial.println(power_cycle_valid_command_count);
-        }
     }
+
 
     if(last_level_change_millis > 0)
     {
@@ -180,6 +184,11 @@ uint8_t powermanager_has_command_reload_config()
 }
 
 // misc
+
+uint8_t powermanager_shutdown_requested() {
+    return powermanager_shutdown_request;
+}
+
 uint32_t powermanager_current_time() // in seconds since 0:00:00
 {
     return (millis() - last_timeref_millis) / 1000;

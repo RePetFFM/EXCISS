@@ -17,6 +17,7 @@ uint8_t powermanager_get_usb_power_status();
 uint8_t powermanager_has_power_for_experiment(); // minimum battery level and power good
 uint8_t powermanager_has_power_for_small_things(); // minimum battery level
 
+uint8_t powermanager_shutdown_requested();
 // temp
 uint16_t powermanager_get_charge_state();
 
