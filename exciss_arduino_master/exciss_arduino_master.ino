@@ -91,6 +91,8 @@ void loop() {
 	}
 
 	wdt_reset(); // reset watchdog timer
+
+	
 }
 
 //--------------------------------------------------------------
@@ -166,12 +168,15 @@ void CORE__statemachine_init() {
 			TCCR1B = TCCR1B & 0b11111000 | 0x01; // 0x01 = 31250Hz/1, 0x02 = 31250Hz/8
 
 			CORE__init_state = CORE__INIT_STATE_I2C_BABYSITTER;
+			
 			CORE__statemachine_retry = 0;
 		break;
 
 		case CORE__INIT_STATE_I2C_BABYSITTER:
 			uint8_t powermanager_i2c_init;
+			Serial.println("bs req1");
 			powermanager_i2c_init = powermanager_begin();
+			Serial.println("bs req2");
 			if (!powermanager_i2c_init && (CORE__statemachine_retry<10)) {
 				// retry if init was not successful
 				CORE__statemachine_retry++;
@@ -180,6 +185,7 @@ void CORE__statemachine_init() {
 				delay(10);
 			} else if(!powermanager_i2c_init && CORE__statemachine_retry>=10) {
 				init_i2c_failure_codes[0] = 0xF1; // major failor babysitter doesen't responde after 10 try's
+				Serial.println("bs failure");
 				CORE__init_state = CORE__INIT_STATE_I2C_RTC;
 				CORE__statemachine_retry = 0;
 			} else {
@@ -379,6 +385,7 @@ void CORE__statemachine_ignition() {
 			ignition_requested_charging_voltage = 0;
 			ignition_charging_capacity_target_voltage = 0;
 			ignition_status = 0;
+			ingition_requested = false;
 		break;
 
 		case CORE__IGNITION_SM_L_OFF:
@@ -393,7 +400,19 @@ void CORE__statemachine_ignition() {
 			// wait state for charg reques from raspberry pi
 			if(ignition_requested_charging_voltage>=CORE_IGNITION_MIN_CHARG_VOLTAGE) {
 				ignition_charging_capacity_target_voltage = ignition_requested_charging_voltage;
-				CORE__ignition_state = CORE__IGNITION_SM_T_CHARGE;
+				if(ignition_charging_capacity_target_voltage>0) {
+					chargemonitor_start_charging(ignition_charging_capacity_target_voltage);	
+					ignition_max_charging_runtime = millis() + CORE_IGNITION_MAX_CHARGTIME_MILLIS; // 300 second max charging time
+					ignition_status = 1;
+					CORE__ignition_state = CORE__IGNITION_SM_L_CHARGE;
+				} else {
+					// if cap charg voltage target is 0 (init default value) abort ignition
+					// send failure code to raspberry pi
+					ignition_status = 255;
+					chargemonitor_abort();
+					ignition_failure_code = 11;
+					CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
+				}
 			} else if(ignition_requested_charging_voltage==-1) {
 				ignition_charging_capacity_target_voltage = 0;
 				ignition_failure_code = 1;
@@ -402,22 +421,7 @@ void CORE__statemachine_ignition() {
 		
 		break;
 
-		case CORE__IGNITION_SM_T_CHARGE:
-			if(ignition_charging_capacity_target_voltage>0) {
-				chargemonitor_start_charging(ignition_charging_capacity_target_voltage);	
-				ignition_max_charging_runtime = millis() + CORE_IGNITION_MAX_CHARGTIME_MILLIS; // 300 second max charging time
-				ignition_status = 1;
-				CORE__ignition_state = CORE__IGNITION_SM_L_CHARGE;
-			} else {
-				// if cap charg voltage target is 0 (init default value) abort ignition
-				// send failure code to raspberry pi
-				ignition_status = 255;
-				chargemonitor_abort();
-				ignition_failure_code = 11;
-				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
-			}
-		break;
-
+		
 		case CORE__IGNITION_SM_L_CHARGE:
 			// charging arc capacitor until requested voltage value
 			ignition_status = 1;
@@ -427,7 +431,6 @@ void CORE__statemachine_ignition() {
 				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_READY;
 				ignition_fail_counter = 0;
 				ignition_status = 2;
-				ingition_requested = false;
 			}
 
 			if(millis()>=ignition_max_charging_runtime) {
@@ -461,12 +464,13 @@ void CORE__statemachine_ignition() {
 					reignite th ignition spark and retry.
 				*/
 				ignition_fail_counter++;
-				Serial.print("_F"); // F = fail
+				Serial.print("IG_F"); // F = fail
 				Serial.println(ignition_fail_counter);
 				ignition_retry_delay = millis()+CORE_IGNITION_RETRY_DELAY_MILLIS;
 				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_REDO_DELAY;
+				ingition_requested = false;
 			} else if(ignition_fail_counter==0) {
-				Serial.println("_G"); // G = good
+				Serial.println("IG_GOOD"); // G = good
 				ignition_status = 0;
 				CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
 			} else {
@@ -485,6 +489,7 @@ void CORE__statemachine_ignition() {
 		case CORE__IGNITION_SM_T_ABORT_DUE_FAILURE:
 			// ignition failure handling
 			// ignition_armed = 0;
+			ingition_requested = false;
 			ignition_status = 0;
 			Serial.print("IGF ");
 			Serial.println(ignition_failure_code,HEX);
@@ -573,6 +578,8 @@ void IGNITION_request_charging(int cap_target_voltage) {
 	if(cap_target_voltage>=CORE_IGNITION_MIN_CHARG_VOLTAGE
 		&& cap_target_voltage<=CORE_IGNITION_MAX_CHARG_VOLTAGE) {
 		ignition_requested_charging_voltage = cap_target_voltage;
+
+		CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
 		Serial.println(ignition_requested_charging_voltage);
 	} else {
 		ignition_requested_charging_voltage = -1;
@@ -873,7 +880,7 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 
 		case 'i':
 			if(buf[1]=='c') { // wct set arc capcitor charg level
-				ignition_status = 0;
+				ignition_status = 1;
 				buf[0] = ' ';
 				buf[1] = ' ';
 				tmpLong = atoi((const char*)&buf[2]);
@@ -887,8 +894,8 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 			}
 
 			if(buf[1]=='i') {
+				IGNITION_request_charging(ignition_requested_charging_voltage);
 				ingition_requested = true;
-				Serial.println("IGNITE");
 			}
 		break;
 

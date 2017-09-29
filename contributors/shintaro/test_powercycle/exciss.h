@@ -18,8 +18,11 @@
 
 #define POWERMANAGER_CALL_FREQUENCY 1 // call period (in seconds)
 
-#define POWERMANAGER_N_RELOADCONFIG             3
-#define POWERMANAGER_N_MAX_CYCLE                5
+#define POWERMANAGER_N_RELOADCONFIG             4
+
+
+#define POWERMANAGER_POWERCYCLE_WINDOW_MILLIS	1000UL*60UL
+#define POWERMANAGER_POWERCYCLE_MIN_INTERVAL	2000UL
 
 #define POWERMANAGER_STATUSBIT_HAS_POWERDOWN 0
 #define POWERMANAGER_STATUSBIT_HAS_TIMEREF 1
@@ -31,10 +34,6 @@
 */
 
 // times in milliseconds
-
-#define POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS     1000*5
-#define POWERMANAGER_POWERCYCLE_MARGIN_MILLIS       1000*1
-#define POWERMANAGER_POWERCYCLE_END_DELAY_MILLIS    1000*10
 
 #define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS        1000UL*60UL*30UL
 
@@ -76,7 +75,7 @@
 
 // ------------------------------------
 // ignition config
-#define CORE_IGNITION_MAX_CHARGTIME_MILLIS          1000UL*300UL
+#define CORE_IGNITION_MAX_CHARGTIME_MILLIS          5000
 #define CORE_IGNITION_RETRY_MAX_COUNT               5
 #define CORE_IGNITION_RETRY_DELAY_MILLIS            300
 #define CORE_IGNITION_MIN_CHARG_VOLTAGE             100
@@ -101,9 +100,9 @@
 
 // ------------------------------------
 // science operations
-#define SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS      60000UL*5UL
-#define SCIENCE__DEFAULT_WAKEUP_TIMER_MILLIS        60000UL*30UL
-#define SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN       1000UL*30UL
+#define SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS      60000*5
+#define SCIENCE__DEFAULT_WAKEUP_TIMER_MILLIS        60000*30
+#define SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN       1000*30
 
 
 // ------------------------------------
@@ -140,7 +139,8 @@
 #define CORE__IGNITION_SM_T_INIT                                4101
 #define CORE__IGNITION_SM_L_OFF                                 4102
 #define CORE__IGNITION_SM_L_IDLE                                4201
-#define CORE__IGNITION_SM_L_CHARGE                              4301
+#define CORE__IGNITION_SM_T_CHARGE                              4301
+#define CORE__IGNITION_SM_L_CHARGE                              4302
 #define CORE__IGNITION_SM_T_IGNITION_READY                      4401
 #define CORE__IGNITION_SM_T_IGNITION_IGNITE                     4403
 #define CORE__IGNITION_SM_L_IGNITION_REDO                       4404
