@@ -75,12 +75,13 @@ void loop() {
 
 	if(CORE__init_done == CORE__INIT_DONE) {
 		// Serial.println(CORE__main_state);
-		powermanager_poll_powercycle_command();
+		powermanager_poll_powercycle_command(); // VBUS power event handling
 
 		SERIAL__Parser();
 
 
-		CORE__statemachine_powermanagment();
+		CORE__statemachine_powermanagment(); // power
+		// CORE__task_powermanagment(); // power
 
 
 		CORE__statemachine_main();
@@ -738,7 +739,7 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 			// returns: system health data from arduino
 			Serial.println("MCU health log");
 			Serial.print("bat v: ");
-			Serial.print(powermanager_get_voltage());
+			Serial.println(powermanager_get_voltage());
 			Serial.print("bat a: ");
 			Serial.println(powermanager_get_capacity());
 			Serial.print("frame power: ");
