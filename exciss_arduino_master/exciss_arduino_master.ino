@@ -19,7 +19,37 @@ Adafruit_DRV2605 DRV2605__shaker;
 String DRV2605__effect_sequence = "64_64_64_64_64_64_64";
 uint8_t DRV2605__shaker_run = 0;
 
+uint8_t CORE__operation_mode = CORE__OPERATION_MODE_RECOVERY;
 
+
+// global states
+uint32_t CORE__init_done = CORE__INIT_EXECUTE; // 0xA5A5 = init run state, 0x5A5A = init done
+
+
+// init state machine
+uint32_t CORE__init_state = CORE__INIT_STATE_I2C_BABYSITTER; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+char init_i2c_failure_codes[3];// failure code variales
+char init_failure_code = 0;
+
+// main state machine
+uint32_t CORE__main_state = CORE__MAIN_SM_L_RECOVERMODE_DATATRANSFER_MODE; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+uint8_t CORE__statemachine_retry = 0;
+
+// powermanagment state machine
+uint32_t CORE__powermanagment_state = CORE__POWER_SM_T_INIT; // the state char are mirrord 4bit values. For example the 4bit value 0101 
+
+// highvoltage state machine
+uint32_t CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
+
+// char ignition_armed = 0x00; // 0xA5 = armed, 0x5A = disarmed
+int ignition_charging_capacity_target_voltage = 0; // must be configured via serial from raspberry pi.
+char ignition_failure_code = 0;  // 00 - FF
+uint8_t ignition_status = 0;
+
+unsigned long science_computer_keepalive_timer;
+unsigned long science_computer_wakeup_timer;
+
+uint8_t ingition_requested = 0;
 
 
 void setup() {
@@ -37,35 +67,6 @@ void setup() {
 	wdt_reset(); // reset watchdog timer
 }
 
-// global states
-uint32_t CORE__init_done = CORE__INIT_EXECUTE; // 0xA5A5 = init run state, 0x5A5A = init done
-
-
-// init state machine
-uint32_t CORE__init_state = CORE__INIT_STATE_SET_PWM_FREQ; // the state char are mirrord 4bit values. For example the 4bit value 0101 
-char init_i2c_failure_codes[3];// failure code variales
-char init_failure_code = 0;
-
-// main state machine
-uint32_t CORE__main_state = CORE__MAIN_SM_T_INIT_IDLE_MODE; // the state char are mirrord 4bit values. For example the 4bit value 0101 
-uint8_t CORE__statemachine_retry = 0;
-
-// powermanagment state machine
-uint32_t CORE__powermanagment_state = CORE__POWER_SM_T_INIT; // the state char are mirrord 4bit values. For example the 4bit value 0101 
-
-// highvoltage state machine
-uint32_t CORE__ignition_state = CORE__IGNITION_SM_T_INIT;
-
-// char ignition_armed = 0x00; // 0xA5 = armed, 0x5A = disarmed
-int ignition_charging_capacity_target_voltage = 0; // must be configured via serial from raspberry pi.
-char ignition_failure_code = 0;  // 00 - FF
-uint8_t ignition_status = 0;
-
-unsigned long science_computer_keepalive_timer;
-unsigned long science_computer_wakeup_timer;
-
-uint8_t ingition_requested = 0;
-
 
 void loop() {
 	if(CORE__init_done == CORE__INIT_EXECUTE) {
@@ -76,6 +77,7 @@ void loop() {
 	if(CORE__init_done == CORE__INIT_DONE) {
 		// Serial.println(CORE__main_state);
 		powermanager_poll_powercycle_command(); // VBUS power event handling
+
 
 		SERIAL__Parser();
 
@@ -101,8 +103,11 @@ void loop() {
 // begin: Core
 
 void CORE__init_pins() {
+	// set higher pwm frequency for the leds to prevent flicker in video recording
+	TCCR1B = TCCR1B & 0b11111000 | 0x01; // 0x01 = 31250Hz/1, 0x02 = 31250Hz/8
 
-	pinMode(0, INPUT_PULLUP);
+	// TODO: remove following pullup pin mode if serial works fine!
+	// pinMode(0, INPUT_PULLUP);
 
 	// left side
 	pinMode(CORE__PIN_DOUT_MOSFET_5V, OUTPUT);
@@ -117,8 +122,6 @@ void CORE__init_pins() {
 	pinMode(CORE__PIN_DOUT_BABYSITTER_SYSOFF, OUTPUT);
 	pinMode(CORE__PIN_PWM_POWERLED_BACK, OUTPUT);
 
-	// etc
-	pinMode(CORE__PIN_DEBUG_LED, OUTPUT);
 	
 
 	// initial pin state
@@ -127,13 +130,14 @@ void CORE__init_pins() {
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
 	digitalWrite(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, LOW);
 	digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, LOW);
-	POWERLED_frontlight(0);
 
-	USB_DATASWITCH_switch_to_transfer_mode();
 	powermanager_vsys_on();
+	POWERLED_frontlight(0);
 	POWERLED_backlight(0);
 
-	digitalWrite(CORE__PIN_DEBUG_LED, LOW);
+	powermanager_8V_off();
+	powermanager_5V_off();
+	USB_DATASWITCH_switch_to_transfer_mode();
 }
 
 
@@ -164,15 +168,6 @@ void CORE__statemachine_init() {
 	}
 
 	switch (CORE__init_state) {
-		case CORE__INIT_STATE_SET_PWM_FREQ:
-			// set higher pwm frequency for the leds to prevent flicker in video recording
-			TCCR1B = TCCR1B & 0b11111000 | 0x01; // 0x01 = 31250Hz/1, 0x02 = 31250Hz/8
-
-			CORE__init_state = CORE__INIT_STATE_I2C_BABYSITTER;
-			
-			CORE__statemachine_retry = 0;
-		break;
-
 		case CORE__INIT_STATE_I2C_BABYSITTER:
 			uint8_t powermanager_i2c_init;
 			Serial.println("bs req1");
@@ -207,16 +202,15 @@ void CORE__statemachine_init() {
 				delay(10);
 			} else if(!rtc_i2c_init && CORE__statemachine_retry>=10) {
 				init_i2c_failure_codes[1] = 0xF1; // major failor babysitter doesen't responde after 10 try's
-				CORE__init_state = CORE__INIT_STATE_I2C_RTC;
+				CORE__init_state = CORE__INIT_STATE_END;
 				CORE__statemachine_retry = 0;
 			} else {
 				CORE__statemachine_retry = 0;
-				CORE__init_state = CORE__INIT_STATE_INIT_SERIAL;
+				CORE__init_state = CORE__INIT_STATE_END;
 			}
 		break;
 
-		case CORE__INIT_STATE_INIT_SERIAL:
-			CORE__init_state 	= CORE__INIT_STATE_END;
+		case CORE__INIT_STATE_END:
 			CORE__init_done 	= CORE__INIT_DONE;
 		break;
 	}
@@ -224,6 +218,9 @@ void CORE__statemachine_init() {
 
 void CORE__statemachine_main() {
 	static unsigned long main_statemachine_delay = 0;
+	static uint32_t CORE__main_sm_delay;
+	static uint32_t CORE__main_sm_delay_next_state;
+
 	
 	static uint32_t laststate = 0;
 	if(laststate!=CORE__main_state) {
@@ -232,18 +229,23 @@ void CORE__statemachine_main() {
 		Serial.println(CORE__main_state);
 	}
 
-	switch (CORE__main_state) {
-		case CORE__MAIN_SM_T_INIT_IDLE_MODE:
-			// turn off all component not required for idle mode
+	if(CORE__main_sm_delay>0 && millis()>CORE__main_sm_delay) {
+		CORE__main_sm_delay = 0;
+		CORE__main_state = CORE__main_sm_delay_next_state;
+		CORE__main_sm_delay_next_state = 0;
+	}
 
-			powermanager_8V_off();
-			powermanager_5V_off();
-			// ignition_armed = 0x5A;
-			OPERATIONS__force_raspberry_shutdown_init();
-			USB_DATASWITCH_switch_to_transfer_mode();
-			CORE__main_state = CORE__MAIN_SM_L_IDLE;
+
+	switch (CORE__main_state) {
+		case CORE__MAIN_SM_L_RECOVERMODE_DATATRANSFER_MODE:
+			// CORE__main_state = CORE__MAIN_SM_L_IDLE;
+			CORE__powermanagment_state = CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER;
+			CORE__main_state = CORE__MAIN_SM_DELAY;
+			CORE__main_sm_delay_next_state = CORE__MAIN_SM_L_IDLE;
+			CORE__main_sm_delay = millis()+CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS;
+			// the recovery mode is handled by powermanagment state machine
 		break;
-		
+
 		case CORE__MAIN_SM_L_IDLE:
 			// Serial.println(TIMEKEEPER__get_current_timeframe());
 			switch(TIMEKEEPER__get_current_timeframe()) {
@@ -282,7 +284,6 @@ void CORE__statemachine_main() {
 			// powering up 5V switched power rail. The raspberry pi will begin with booting
 			// ignition_armed = 0xA5;
 			science_computer_keepalive_timer = millis()+SCIENCE__DEFAULT_KEEPALIVE_TIME_MILLIS;
-			OPERATIONS__force_raspberry_shutdown_init();
 
 			powermanager_5V_on();
 
@@ -293,9 +294,9 @@ void CORE__statemachine_main() {
 
 		case CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE:
 			if(millis()>science_computer_keepalive_timer) {
-				OPERATIONS__force_raspberry_shutdown();
+				OPERATIONS__send_raspberry_shutdown_signal();
 
-				CORE__ignition_state = CORE__IGNITION_SM_T_INIT;
+				CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
 
 				main_statemachine_delay = millis() + SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN;
 
@@ -305,15 +306,18 @@ void CORE__statemachine_main() {
 
 		case CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY:
 			if(millis()>main_statemachine_delay) {
-				CORE__main_state = CORE__MAIN_SM_T_INIT_IDLE_MODE;
+				CORE__operation_mode = CORE__OPERATION_MODE_SCIENCE; 
+				CORE__powermanagment_state = CORE__POWER_SM_L_IDLE_MODE;
+				powermanager_8V_off();
+				powermanager_5V_off();
+				USB_DATASWITCH_switch_to_transfer_mode();
+				CORE__main_state = CORE__MAIN_SM_L_IDLE;
 				if(millis()>science_computer_wakeup_timer) {
 					// if wakeup timer not set, set default timer. 
 					science_computer_wakeup_timer = millis() + SCIENCE__DEFAULT_WAKEUP_TIMER_MILLIS;
 				}
 			}
 		break;
-
-		
 	}
 }
 
@@ -321,12 +325,20 @@ unsigned long timestamp_recoverymodus_requested;
 
 void CORE__statemachine_powermanagment() {
 	static unsigned long delayTimer;
+	static uint32_t CORE__powermanagment_sm_delay;
+	static uint32_t CORE__powermanagment_sm_delay_next_state;
 
 	static uint32_t laststate = 0;
 	if(laststate!=CORE__powermanagment_state) {
 		laststate = CORE__powermanagment_state;
 		Serial.print("sm");
 		Serial.println(CORE__powermanagment_state);
+	}
+
+	if(CORE__powermanagment_sm_delay>0 && millis()>CORE__powermanagment_sm_delay) {
+		CORE__powermanagment_sm_delay = 0;
+		CORE__powermanagment_state = CORE__powermanagment_sm_delay_next_state;
+		CORE__powermanagment_sm_delay_next_state = 0;
 	}
 	
 	switch (CORE__powermanagment_state) {
@@ -338,23 +350,36 @@ void CORE__statemachine_powermanagment() {
 			if(powermanager_has_command_reload_config()) {
 				Serial.println("reload config");
 				timestamp_recoverymodus_requested = millis();
-				OPERATIONS__force_raspberry_shutdown();
-				CORE__powermanagment_state = CORE__POWER_SM_L_RECOVER_MODE_DELAY;	
-				delayTimer = millis() + 60000*3;
+				OPERATIONS__send_raspberry_shutdown_signal();
+				
+				// set delay. Waiting for gracefull SCU shutdown state.
+				CORE__powermanagment_state = CORE__POWER_SM_DELAY;
+				CORE__powermanagment_sm_delay_next_state = CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER;	
+				CORE__powermanagment_sm_delay = millis() + CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS;
 			}
 
 			if(powermanager_shutdown_requested()==0x5A) {
-				OPERATIONS__force_raspberry_shutdown();
+				OPERATIONS__send_raspberry_shutdown_signal();
 			}
 		break;
 		
-		case CORE__POWER_SM_L_RECOVER_MODE_DELAY:
-			if(millis()>delayTimer) {
-				CORE__powermanagment_state = CORE__POWER_SM_L_IDLE_MODE;
-				USB_DATASWITCH_switch_to_transfer_mode();
-				powermanager_8V_off();
-				powermanager_5V_off();	
-			}
+		case CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER:
+			CORE__operation_mode = CORE__OPERATION_MODE_RECOVERY;
+			CORE__powermanagment_state = CORE__POWER_SM_DELAY;
+			CORE__powermanagment_sm_delay_next_state = CORE__POWER_SM_L_RECOVERY_MODE_START_SCU;	
+			CORE__powermanagment_sm_delay = millis() + CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS;
+		break;
+
+		case CORE__POWER_SM_L_RECOVERY_MODE_START_SCU:
+			science_computer_keepalive_timer = millis()+CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS;
+			powermanager_5V_on();
+			CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
+			CORE__main_state = CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE;
+			USB_DATASWITCH_switch_to_science_mode();
+
+			CORE__powermanagment_state = CORE__POWER_SM_DELAY;
+			CORE__powermanagment_sm_delay_next_state = CORE__POWER_SM_L_IDLE_MODE;	
+			CORE__powermanagment_sm_delay = millis() + CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS;
 		break;
 
 	}
@@ -379,22 +404,11 @@ void CORE__statemachine_ignition() {
 	
 	switch (CORE__ignition_state) {
 
-		case CORE__IGNITION_SM_T_INIT:
-			CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
-
-			// ignition_armed = 0x5A;
+		case CORE__IGNITION_SM_L_OFF:
 			ignition_requested_charging_voltage = 0;
 			ignition_charging_capacity_target_voltage = 0;
 			ignition_status = 0;
 			ingition_requested = false;
-		break;
-
-		case CORE__IGNITION_SM_L_OFF:
-			if(CORE__main_state==CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE) {
-				ignition_requested_charging_voltage = 0;
-				ignition_charging_capacity_target_voltage = 0;
-				CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
-			}
 		break;
 
 		case CORE__IGNITION_SM_L_IDLE:
@@ -537,11 +551,9 @@ uint32_t TIMEKEEPER__get_deltaT_to_next_datatransfer_seconds() {
 
 
 
-void OPERATIONS__force_raspberry_shutdown() {
+void OPERATIONS__send_raspberry_shutdown_signal() {
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, HIGH);
-}
-
-void OPERATIONS__force_raspberry_shutdown_init() {
+	delay(1);	
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
 }
 
@@ -693,7 +705,6 @@ void SERIAL__Parser() {
 	static uint8_t cmdcount = 0;    // position in the buffer of the received byte
 	uint8_t c;                      // received byte
 	while(Serial.available()) {
-		digitalWrite(CORE__PIN_DEBUG_LED, HIGH);
 		c = Serial.read();
 		if(c > ' ') cmd[cmdcount++] = c;
 		if((c == 8) && (cmdcount > 0)) cmdcount--;                // deals with backspaces, if a person on the other side types 
@@ -713,7 +724,6 @@ void SERIAL__Parser() {
 				}    
 			}
 			cmdcount = 0;
-			digitalWrite(CORE__PIN_DEBUG_LED, LOW);
 		} 
 	}
 }
@@ -732,18 +742,36 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 			}
 		break;
 
+		case 'o':
+			if(buf[1]=='m') {
+				// get current operation mode
+				// command: rom
+				// returns: returns current operation mode RECOVERY / SCIENCE
+				switch(CORE__operation_mode) {
+					case CORE__OPERATION_MODE_RECOVERY: 
+						Serial.println("RECOVERY");
+					break;
+					case CORE__OPERATION_MODE_SCIENCE: 
+						Serial.println("SCIENCE");
+					break;
+				}
+			}
+		break;
+
 		case 'h':
-			// get system health data from arduino:
-			// command: rh
-			// parameter: none
-			// returns: system health data from arduino
-			Serial.println("MCU health log");
-			Serial.print("bat v: ");
-			Serial.println(powermanager_get_voltage());
-			Serial.print("bat a: ");
-			Serial.println(powermanager_get_capacity());
-			Serial.print("frame power: ");
-			powermanager_get_usb_power_status() ? Serial.println("FRAME POWER ONLINE") : Serial.println("FRAME POWER OFFLINE");				
+			if(buf[1]=='r') {
+				// get system health data from arduino:
+				// command: rh
+				// parameter: none
+				// returns: system health data from arduino
+				Serial.println("MCU health log");
+				Serial.print("bat v: ");
+				Serial.println(powermanager_get_voltage());
+				Serial.print("bat a: ");
+				Serial.println(powermanager_get_capacity());
+				Serial.print("frame power: ");
+				powermanager_get_usb_power_status() ? Serial.println("FRAME POWER ONLINE") : Serial.println("FRAME POWER OFFLINE");					
+			}		
 		break;
 
 		case 'b':
@@ -791,6 +819,9 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 				Serial.println(chargemonitor_get_charge());
 			}
 		break;
+
+
+		
 
 
 		case 'c':

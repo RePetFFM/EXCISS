@@ -63,103 +63,68 @@ void powermanager_vsys_off() {
 
 void powermanager_poll_powercycle_command()
 {
+    static uint32_t last_power_good_millis = 0UL;
     static uint32_t usb_power_status = 0;
-    static uint32_t previous_usb_power_status = 0;
-    static uint32_t last_level_change_millis;
-    static uint8_t power_cycle_count = 0;
+    static uint32_t previous_usb_power_status = 0;    
     static uint8_t power_cycle_valid_command_count = 0;
-    static uint32_t next_interval_millis;
-    static uint32_t last_power_good_millis;
+    static uint32_t powermanager_powercycle_timeout_millis;
+    static uint32_t last_power_change_millis;
 
-    uint32_t dt_last_level_change_millis;
-    uint8_t pgood = get_pgood();
+    get_pgood() ? usb_power_status = (usb_power_status<<1) | 1 : usb_power_status = usb_power_status<<1;
+
     
-
-    if(pgood) {
-        usb_power_status = (usb_power_status<<1) | 1;
-    } else {
-        usb_power_status = usb_power_status<<1;
-    }
-
     if((usb_power_status==0xFFFFFFFF || usb_power_status==0) && usb_power_status != previous_usb_power_status)
     {
         previous_usb_power_status = usb_power_status;
 
-        dt_last_level_change_millis = millis() - last_level_change_millis;
-
-        if(power_cycle_count==0 && usb_power_status==0) {
-            next_interval_millis = millis() + POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS;    
+        if(powermanager_powercycle_timeout_millis==0 && usb_power_status==0xFFFFFFFF) {
+            Serial.println("Start cycle");
+            powermanager_powercycle_timeout_millis = millis() + POWERMANAGER_POWERCYCLE_WINDOW_MILLIS;
+            power_cycle_valid_command_count++;
+            Serial.println(powermanager_powercycle_timeout_millis);
+            Serial.println(millis());
         }
         
-
-        last_level_change_millis = millis();
-
-        power_cycle_count++;
-
+        
         Serial.print("PGOOD: ");
-        Serial.print(usb_power_status,HEX);
-        Serial.print("PC: ");
-        Serial.println(power_cycle_count);
+        Serial.println(usb_power_status,HEX);
     
-        if(next_interval_millis>0 && power_cycle_count>1) {
-            Serial.println(next_interval_millis);
-            if( millis()>next_interval_millis-POWERMANAGER_POWERCYCLE_MARGIN_MILLIS
-                && next_interval_millis+POWERMANAGER_POWERCYCLE_MARGIN_MILLIS<millis() ) {
+        if(last_power_change_millis>0 && power_cycle_valid_command_count>0) {
+            if( millis()>last_power_change_millis+POWERMANAGER_POWERCYCLE_MIN_INTERVAL) {
                 power_cycle_valid_command_count++;
                 Serial.print("valid count");
                 Serial.println(power_cycle_valid_command_count);
             }
-        }    
+        }
+
+        last_power_change_millis = millis();
         
 
         if(usb_power_status==0xFFFFFFFF) {
-            last_power_good_millis = 0;
+            last_power_good_millis = 0UL;
         } else {
             last_power_good_millis = millis();
         }
     }
 
-    if(millis()>=next_interval_millis){
-        next_interval_millis = millis() + POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS;
-    }
-
-
-    if(last_level_change_millis > 0)
+    if(powermanager_powercycle_timeout_millis>0 && millis()>powermanager_powercycle_timeout_millis)
     {
-        if(millis()>= (last_level_change_millis+POWERMANAGER_POWERCYCLE_END_DELAY_MILLIS)) // end of command
-        {
-
-            Serial.print("max wait time until next command reached ");
-            Serial.println(last_level_change_millis);
-            if(power_cycle_valid_command_count == POWERMANAGER_N_RELOADCONFIG) {
-                Serial.println("RELOAD CONFIG REQUEST");
-                powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
-            }
-             
-            power_cycle_count = 0;
-            last_level_change_millis = 0;
-            power_cycle_valid_command_count = 0;
-            powermanager_shutdown_request = 0xA5;
+        Serial.println("powercommand max wait time");
+        if(power_cycle_valid_command_count == POWERMANAGER_N_RELOADCONFIG) {
+            Serial.println("RELOAD CONFIG REQUEST");
+            powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
         }
-    }
-    
-    if(power_cycle_valid_command_count > POWERMANAGER_N_MAX_CYCLE || power_cycle_count > POWERMANAGER_N_MAX_CYCLE)
-    {
-        Serial.println("too many cycles");
-        power_cycle_count = 0;
-        last_level_change_millis = 0;
+        
+        last_power_change_millis = 0UL;
+        powermanager_powercycle_timeout_millis = 0UL;
         power_cycle_valid_command_count = 0;
-        powermanager_shutdown_request = 0xA5;
-    }
+    } 
 
-    if(last_power_good_millis>0 && millis()>(last_power_good_millis+POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS)) {
+    if(last_power_good_millis>0UL && millis()>(last_power_good_millis+POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS)) {
         Serial.println("FORCE POWER DOWN DUE TO USB POWER DOWN");
-        power_cycle_count = 0;
-        last_level_change_millis = 0;
-        powermanager_shutdown_request = 0x5A;
-        powermanager_8V_off();
-        powermanager_5V_off();
-        powermanager_vsys_off();
+        last_power_change_millis = 0UL;
+        powermanager_powercycle_timeout_millis = 0UL;
+        power_cycle_valid_command_count = 0;
     }
 }
 

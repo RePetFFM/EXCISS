@@ -16,25 +16,17 @@
 #define POWERMANAGER_EXPERIMENT_MIN_CHARGE 50 // value unit is percent
 #define POWERMANAGER_SMALLTHINGS_MIN_CHARGE 20 // value unit is percent
 
-#define POWERMANAGER_CALL_FREQUENCY 1 // call period (in seconds)
+// #define POWERMANAGER_CALL_FREQUENCY 1 // call period (in seconds)
 
-#define POWERMANAGER_N_RELOADCONFIG             3
-#define POWERMANAGER_N_MAX_CYCLE                5
+#define POWERMANAGER_N_RELOADCONFIG             4
+
+#define POWERMANAGER_POWERCYCLE_WINDOW_MILLIS   1000UL*60UL
+#define POWERMANAGER_POWERCYCLE_MIN_INTERVAL    2000UL
 
 #define POWERMANAGER_STATUSBIT_HAS_POWERDOWN 0
 #define POWERMANAGER_STATUSBIT_HAS_TIMEREF 1
 #define POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG 2
 
-/* garbage?
-#define POWERMANAGER_THERSHOLD_MIN_USB_ON 100
-#define POWERMANAGER_THERSHOLD_MAX_USB_OFF 50
-*/
-
-// times in milliseconds
-
-#define POWERMANAGER_POWERCYCLE_INTERVAL_MILLIS     1000*5
-#define POWERMANAGER_POWERCYCLE_MARGIN_MILLIS       1000*1
-#define POWERMANAGER_POWERCYCLE_END_DELAY_MILLIS    1000*10
 
 #define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS        1000UL*60UL*30UL
 
@@ -60,7 +52,6 @@
 #define CORE__PIN_PWM_POWERLED_BACK                         10
 
 // etc.
-#define CORE__PIN_DEBUG_LED                                 13
 
 
 // ------------------------------------
@@ -106,21 +97,28 @@
 #define SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN       1000UL*30UL
 
 
+
+// ------------------------------------
+// Core values
+#define CORE__OPERATION_MODE_RECOVERY           0xA5
+#define CORE__OPERATION_MODE_SCIENCE            0x5A
+
 // ------------------------------------
 // init state machine value definitions
 #define CORE__INIT_EXECUTE  0xA5A5A5A5
 #define CORE__INIT_DONE     0x5A5A5A5A
 
-#define CORE__INIT_STATE_SET_PWM_FREQ                       1101
-#define CORE__INIT_STATE_I2C_BABYSITTER                     1201
-#define CORE__INIT_STATE_I2C_RTC                            1202
-#define CORE__INIT_STATE_INIT_SERIAL                        1203
+#define CORE__INIT_STATE_I2C_BABYSITTER                     1101
+#define CORE__INIT_STATE_I2C_RTC                            1102
 #define CORE__INIT_STATE_END                                1900
 
 
 // ------------------------------------
 // main state machine definitions
-#define CORE__MAIN_SM_T_INIT_IDLE_MODE                      2001
+
+// states
+#define CORE__MAIN_SM_DELAY                                 2000
+#define CORE__MAIN_SM_L_RECOVERMODE_DATATRANSFER_MODE       2001
 #define CORE__MAIN_SM_L_IDLE                                2101
 #define CORE__MAIN_SM_T_SCIENCE_GO                          2201
 #define CORE__MAIN_SM_T_SCIENCE_GO_DELAY                    2202
@@ -128,17 +126,35 @@
 #define CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE             2204
 #define CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY             2205
 
+// execution delays
+#define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*60UL*60UL
 
 // ------------------------------------
 // power managment state machine definitions
+
+// states
+#define CORE__POWER_SM_DELAY                                3000
 #define CORE__POWER_SM_T_INIT                               3101
 #define CORE__POWER_SM_L_IDLE_MODE                          3201
-#define CORE__POWER_SM_L_RECOVER_MODE_DELAY                 3202
+#define CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER     3202
+#define CORE__POWER_SM_L_RECOVERY_MODE_START_SCU            3301
+
+// execution delays
+#define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL*5UL
+// #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*30UL // flight version
+#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*10UL // dev version
+
+
+
+// miscellaneous
+// #define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*5UL // flight version
+#define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*30UL  // dev version
 
 // ------------------------------------
 // ignition managment state machine definitions
-#define CORE__IGNITION_SM_T_INIT                                4101
-#define CORE__IGNITION_SM_L_OFF                                 4102
+
+// states
+#define CORE__IGNITION_SM_L_OFF                                 4101
 #define CORE__IGNITION_SM_L_IDLE                                4201
 #define CORE__IGNITION_SM_L_CHARGE                              4301
 #define CORE__IGNITION_SM_T_IGNITION_READY                      4401
