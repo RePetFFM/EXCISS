@@ -659,7 +659,6 @@ long DS3231__get_minute() {
  * YYYY_M_D_H_M_S (no leading 0s)
  */
 void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
-
 	int rtc_Time[] = {0,0,0,0,0,0};
 
 	int j = 0;
@@ -677,15 +676,19 @@ void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
 
 	if(timeRecoverMode) {
 		if (j<6) {
-			// uint32_t recover_start_datetime_ut = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).uint32_t();
 			// recover_start_datetime_ut + recover_mode_last_entered_ut;
-			// rtc.adjust();
+
+			uint32_t last_powercycle_timestamp_seconds = get_last_powercylce_command_timestamp() * 1000UL;
+
+			DateTime recover_date_time_unixtime = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).unixtime();
+
+			uint32_t recover_current_date_time = recover_date_time_unixtime.secondstime()+last_powercycle_timestamp_seconds;
+			
+			rtc.adjust(DateTime(recover_current_date_time));
 		}
 	} else {
 		if (j<6) rtc.adjust(DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]));
 	}
-
-	
 }
 
 // end: RTC code DS3231
@@ -857,6 +860,7 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 			{
 				buf[0] = ' ';
 				tmpLong = atoi((const char*)&buf[1]);
+				Serial.print("LED front ");
 				Serial.println(tmpLong);
 				POWERLED_frontlight((int)tmpLong);
 				// analogWrite(POWERLED_FRONT, 100);
@@ -867,6 +871,7 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 			{
 				buf[0] = ' ';
 				tmpLong = atoi((const char*)&buf[1]);
+				Serial.print("LED back ");
 				Serial.println(tmpLong);
 				POWERLED_backlight((int)tmpLong);
 				// analogWrite(POWERLED_BACK, 100);
@@ -877,10 +882,12 @@ void SERIAL__ParserWrite(char * buf,uint8_t cnt) {
 			if(buf[1]=='t') { // write date time to RTC. example wdt2017_9_16_20_14_00
 				String str((const char*)&buf[2]);
 				DS3231__set_Time(str,false);
+				Serial.println(DS3231__get_Time());
 			}
 			if(buf[1]=='r') { // write date time to RTC. example wdt2017_9_16_20_14_00
 				String str((const char*)&buf[2]);
 				DS3231__set_Time(str,true);
+				Serial.println(DS3231__get_Time());
 			}
 		break;
 
@@ -924,7 +931,7 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 			}
 
 			if(buf[1]=='a') { 
-				Serial.println("ABORT");
+				Serial.println("CHARG ABORT");
 			}
 
 			if(buf[1]=='i') {

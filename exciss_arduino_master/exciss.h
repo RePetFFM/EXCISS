@@ -85,7 +85,7 @@
 
 // voltage threshold for determining whether ignition was successful (capacitor discharged to ca. 70V) - set above physical threshold
 #define CHARGEMONITOR_EMPTY_THRESHOLD 100
-#define CHARGEMONITOR_VOLTAGE_SCALE 1 // 400/3 // beware of integer divisions!
+#define CHARGEMONITOR_VOLTAGE_MAX_CHARGE 600 // 400/3 // beware of integer divisions!
 
 
 // ------------------------------------

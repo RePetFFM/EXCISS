@@ -5,6 +5,8 @@
 uint8_t powermanager_status = 0;
 uint64_t last_timeref_millis = 0;
 
+uint32_t powercycle_command_first_signal_timestamp = 0UL;
+
 uint8_t powermanager_shutdown_request = 0xA5;
 
 inline uint8_t get_pgood()
@@ -34,6 +36,10 @@ uint16_t powermanager_get_capacity() {
 
 uint8_t powermanager_get_usb_power_status() {
     return get_pgood();
+}
+
+uint32_t get_last_powercylce_command_timestamp() {
+    return powercycle_command_first_signal_timestamp;
 }
 
 // power switching
@@ -115,6 +121,8 @@ void powermanager_poll_powercycle_command()
             powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
         }
         
+        powercycle_command_first_signal_timestamp = powermanager_powercycle_timeout_millis;
+
         last_power_change_millis = 0UL;
         powermanager_powercycle_timeout_millis = 0UL;
         power_cycle_valid_command_count = 0;
