@@ -769,6 +769,8 @@ void SERIAL__ParserRead(char * buf,uint8_t cnt) {
 				Serial.println(powermanager_get_voltage());
 				Serial.print("bat a: ");
 				Serial.println(powermanager_get_capacity());
+				Serial.print("bat charg: ");
+				Serial.println(powermanager_get_charge_state());
 				Serial.print("frame power: ");
 				powermanager_get_usb_power_status() ? Serial.println("FRAME POWER ONLINE") : Serial.println("FRAME POWER OFFLINE");					
 			}		

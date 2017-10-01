@@ -129,18 +129,6 @@ void powermanager_poll_powercycle_command()
 }
 
 // power-cycle command requests
-uint8_t powermanager_has_command_powerdown()
-{
-    uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_POWERDOWN);
-    powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_POWERDOWN);
-    return result;
-}
-uint8_t powermanager_has_new_reference_time()
-{
-    uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_TIMEREF);
-    powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_TIMEREF);
-    return result;
-}
 uint8_t powermanager_has_command_reload_config()
 {
     uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
