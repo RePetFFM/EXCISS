@@ -9,6 +9,8 @@ uint32_t powercycle_command_first_signal_timestamp = 0UL;
 
 uint8_t powermanager_shutdown_request = 0xA5;
 
+uint8_t request_recovery_mode = 0xA5;
+
 inline uint8_t get_pgood()
 {
     return digitalRead(CORE__PIN_DOUT_BABYSITTER_PGOOD) == LOW;
@@ -119,7 +121,7 @@ void powermanager_poll_powercycle_command()
         Serial.println("powercommand max wait time");
         if(power_cycle_valid_command_count == POWERMANAGER_N_RELOADCONFIG) {
             Serial.println("RELOAD CONFIG REQUEST");
-            powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
+            request_recovery_mode = 0x5A;
         }
         
         //powercycle_command_first_signal_timestamp = powermanager_powercycle_timeout_millis;
@@ -129,20 +131,17 @@ void powermanager_poll_powercycle_command()
         power_cycle_valid_command_count = 0;
     } 
 
-    if(last_power_good_millis>0UL && millis()>(last_power_good_millis+POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS)) {
-        Serial.println("FORCE POWER DOWN DUE TO USB POWER DOWN");
-        last_power_change_millis = 0UL;
-        powermanager_powercycle_timeout_millis = 0UL;
-        power_cycle_valid_command_count = 0;
+    if(powermanager_shutdown_request==0xA5 && last_power_good_millis>0UL && millis()>(last_power_good_millis+POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS)) {
+        Serial.println("FORCE POWER DOWN DUE TO USB POWER DOWN ");
+        powermanager_shutdown_request = 0x5A;
+        // powermanager_vsys_off();
     }
 }
 
 // power-cycle command requests
 uint8_t powermanager_has_command_reload_config()
 {
-    uint8_t result = powermanager_status & (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
-    powermanager_status &= ~(1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
-    return result;
+    return request_recovery_mode;
 }
 
 // misc

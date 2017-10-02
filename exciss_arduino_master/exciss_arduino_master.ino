@@ -328,6 +328,8 @@ void CORE__statemachine_powermanagment() {
 	static uint32_t CORE__powermanagment_sm_delay;
 	static uint32_t CORE__powermanagment_sm_delay_next_state;
 
+	static uint32_t CORE__powermanagment_sm_wait_for_sysoff = 0xA5;
+
 	static uint32_t laststate = 0;
 	if(laststate!=CORE__powermanagment_state) {
 		laststate = CORE__powermanagment_state;
@@ -340,6 +342,15 @@ void CORE__statemachine_powermanagment() {
 		CORE__powermanagment_state = CORE__powermanagment_sm_delay_next_state;
 		CORE__powermanagment_sm_delay_next_state = 0;
 	}
+
+	if(powermanager_shutdown_requested()==0x5A && CORE__powermanagment_sm_wait_for_sysoff==0xA5) {
+		CORE__powermanagment_sm_wait_for_sysoff=0x5A;
+		OPERATIONS__send_raspberry_shutdown_signal();
+		Serial.println("SCU shutdown wait");
+		CORE__powermanagment_state = CORE__POWER_SM_DELAY;
+		CORE__powermanagment_sm_delay_next_state = CORE__POWER_SM_E_DO_SYSTEM_OFF;	
+		CORE__powermanagment_sm_delay = millis() + CORE__POWER_SM_DELAY_SYSTEM_OFF;
+	}
 	
 	switch (CORE__powermanagment_state) {
 		case CORE__POWER_SM_T_INIT:
@@ -347,7 +358,7 @@ void CORE__statemachine_powermanagment() {
 		break;
 
 		case CORE__POWER_SM_L_IDLE_MODE:
-			if(powermanager_has_command_reload_config()) {
+			if(powermanager_has_command_reload_config()==0x5A) {
 				Serial.println("reload config");
 				timestamp_recoverymodus_requested = millis();
 				OPERATIONS__send_raspberry_shutdown_signal();
@@ -356,10 +367,6 @@ void CORE__statemachine_powermanagment() {
 				CORE__powermanagment_state = CORE__POWER_SM_DELAY;
 				CORE__powermanagment_sm_delay_next_state = CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER;	
 				CORE__powermanagment_sm_delay = millis() + CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS;
-			}
-
-			if(powermanager_shutdown_requested()==0x5A) {
-				OPERATIONS__send_raspberry_shutdown_signal();
 			}
 		break;
 		
@@ -380,6 +387,12 @@ void CORE__statemachine_powermanagment() {
 			CORE__powermanagment_state = CORE__POWER_SM_DELAY;
 			CORE__powermanagment_sm_delay_next_state = CORE__POWER_SM_L_IDLE_MODE;	
 			CORE__powermanagment_sm_delay = millis() + CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS;
+		break;
+
+		case CORE__POWER_SM_E_DO_SYSTEM_OFF:
+			Serial.println("SYSY OFF bye");
+			delay(10);
+			OPERATIONS__do_system_off();
 		break;
 
 	}
@@ -555,6 +568,16 @@ void OPERATIONS__send_raspberry_shutdown_signal() {
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, HIGH);
 	delay(1);	
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
+}
+
+
+void OPERATIONS__do_system_off() {
+	POWERLED_frontlight(0);
+	POWERLED_backlight(0);
+	powermanager_8V_off();
+	powermanager_5V_off();
+	USB_DATASWITCH_switch_to_transfer_mode();
+	powermanager_vsys_off();
 }
 
 // end: operations routines

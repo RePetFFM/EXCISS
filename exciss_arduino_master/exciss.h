@@ -25,8 +25,7 @@
 
 #define POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG 2
 
-
-#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS        1000UL*60UL*30UL
+#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS        1000UL*60UL*60UL
 
 
 
@@ -125,7 +124,8 @@
 #define CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY             2205
 
 // execution delays
-#define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*60UL*60UL
+// #define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*10UL // flight
+#define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*10UL
 
 // ------------------------------------
 // power managment state machine definitions
@@ -136,17 +136,16 @@
 #define CORE__POWER_SM_L_IDLE_MODE                          3201
 #define CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER     3202
 #define CORE__POWER_SM_L_RECOVERY_MODE_START_SCU            3301
+#define CORE__POWER_SM_E_DO_SYSTEM_OFF                      3901
 
 // execution delays
-#define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL*1UL
-// #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*30UL // flight version
-#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*3UL // dev version
-
-
+#define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL
+#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*10UL
+#define CORE__POWER_SM_DELAY_SYSTEM_OFF                     1000UL*60UL
 
 // miscellaneous
-// #define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*5UL // flight version
-#define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*10UL  // dev version
+#define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*10UL
+
 
 // ------------------------------------
 // ignition managment state machine definitions
