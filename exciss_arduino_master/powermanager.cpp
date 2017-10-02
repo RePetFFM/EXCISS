@@ -75,8 +75,18 @@ void powermanager_poll_powercycle_command()
     static uint32_t usb_power_status = 0;
     static uint32_t previous_usb_power_status = 0;    
     static uint8_t power_cycle_valid_command_count = 0;
-    static uint32_t powermanager_powercycle_timeout_millis;
-    static uint32_t last_power_change_millis;
+    static uint32_t powermanager_powercycle_timeout_millis = 0UL;
+    static uint32_t last_power_change_millis = 0UL;
+    static uint8_t first_power_on = 0xA5;
+
+
+    /*
+    if(first_power_on==0xA5) {
+        powercycle_command_first_signal_timestamp = millis();
+        powermanager_powercycle_timeout_millis = millis() + 50;
+        first_power_on = 0x5A;
+    }
+    */
 
     get_pgood() ? usb_power_status = (usb_power_status<<1) | 1 : usb_power_status = usb_power_status<<1;
 
@@ -85,20 +95,18 @@ void powermanager_poll_powercycle_command()
     {
         previous_usb_power_status = usb_power_status;
 
-        if(powermanager_powercycle_timeout_millis==0 && usb_power_status==0xFFFFFFFF) {
+        if(powermanager_powercycle_timeout_millis==0UL && usb_power_status==0xFFFFFFFF) {
             Serial.println("Start cycle");
             powermanager_powercycle_timeout_millis = millis() + POWERMANAGER_POWERCYCLE_WINDOW_MILLIS;
             powercycle_command_first_signal_timestamp = millis();
             power_cycle_valid_command_count++;
-            Serial.println(powermanager_powercycle_timeout_millis);
-            Serial.println(millis());
         }
         
         
         Serial.print("PGOOD: ");
         Serial.println(usb_power_status,HEX);
     
-        if(last_power_change_millis>0 && power_cycle_valid_command_count>0) {
+        if(last_power_change_millis>0UL && power_cycle_valid_command_count>0) {
             if( millis()>last_power_change_millis+POWERMANAGER_POWERCYCLE_MIN_INTERVAL) {
                 power_cycle_valid_command_count++;
                 Serial.print("valid count");
@@ -116,7 +124,7 @@ void powermanager_poll_powercycle_command()
         }
     }
 
-    if(powermanager_powercycle_timeout_millis>0 && millis()>powermanager_powercycle_timeout_millis)
+    if(powermanager_powercycle_timeout_millis>0UL && millis()>powermanager_powercycle_timeout_millis)
     {
         Serial.println("powercommand max wait time");
         if(power_cycle_valid_command_count == POWERMANAGER_N_RELOADCONFIG) {
@@ -124,7 +132,7 @@ void powermanager_poll_powercycle_command()
             request_recovery_mode = 0x5A;
         }
         
-        //powercycle_command_first_signal_timestamp = powermanager_powercycle_timeout_millis;
+        // powercycle_command_first_signal_timestamp = powermanager_powercycle_timeout_millis;
 
         last_power_change_millis = 0UL;
         powermanager_powercycle_timeout_millis = 0UL;

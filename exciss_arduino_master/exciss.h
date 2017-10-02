@@ -25,7 +25,7 @@
 
 #define POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG 2
 
-#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS        1000UL*60UL*60UL
+#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS        1000UL*60UL*5UL
 
 
 
@@ -64,11 +64,12 @@
 
 // ------------------------------------
 // ignition config
+#define CHARGEMONITOR_VOLTAGE_MAX_CHARGE            600
 #define CORE_IGNITION_MAX_CHARGTIME_MILLIS          1000UL*300UL
 #define CORE_IGNITION_RETRY_MAX_COUNT               5
 #define CORE_IGNITION_RETRY_DELAY_MILLIS            300
 #define CORE_IGNITION_MIN_CHARG_VOLTAGE             100
-#define CORE_IGNITION_MAX_CHARG_VOLTAGE             300
+#define CORE_IGNITION_MAX_CHARG_VOLTAGE             600
 
 // pin to enable arc capacitor charging
 #define CHARGEMONITOR_CHARGE_ENABLE HIGH
@@ -124,8 +125,8 @@
 #define CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY             2205
 
 // execution delays
-// #define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*10UL // flight
-#define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*10UL
+#define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*10UL // flight
+// #define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*10UL*1UL
 
 // ------------------------------------
 // power managment state machine definitions
@@ -140,17 +141,19 @@
 
 // execution delays
 #define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL
-#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*10UL
+// #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*5UL
+#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*3UL
 #define CORE__POWER_SM_DELAY_SYSTEM_OFF                     1000UL*60UL
 
 // miscellaneous
-#define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*10UL
+#define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*5UL
 
 
 // ------------------------------------
 // ignition managment state machine definitions
 
 // states
+#define CORE__IGNITION_DELAY                                    4000
 #define CORE__IGNITION_SM_L_OFF                                 4101
 #define CORE__IGNITION_SM_L_IDLE                                4201
 #define CORE__IGNITION_SM_L_CHARGE                              4301

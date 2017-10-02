@@ -402,10 +402,14 @@ void CORE__statemachine_powermanagment() {
 uint8_t ignition_fail_counter = 0;
 
 int ignition_requested_charging_voltage = 0;
+uint32_t CORE__ignition_sm_delay;
+uint32_t CORE__ignition_sm_delay_next_state;
 
 void CORE__statemachine_ignition() {
 	static unsigned long ignition_max_charging_runtime; 
 	static unsigned long ignition_retry_delay;
+	
+
 
 	static uint32_t laststate = 0;
 	if(laststate!=CORE__ignition_state) {
@@ -414,6 +418,11 @@ void CORE__statemachine_ignition() {
 		Serial.println(CORE__ignition_state);
 	}
 
+	if(CORE__ignition_sm_delay>0 && millis()>CORE__ignition_sm_delay) {
+		CORE__ignition_sm_delay = 0;
+		CORE__ignition_state = CORE__ignition_sm_delay_next_state;
+		CORE__ignition_sm_delay_next_state = 0;
+	}
 	
 	switch (CORE__ignition_state) {
 
@@ -615,7 +624,11 @@ void IGNITION_request_charging(int cap_target_voltage) {
 		&& cap_target_voltage<=CORE_IGNITION_MAX_CHARG_VOLTAGE) {
 		ignition_requested_charging_voltage = cap_target_voltage;
 
-		CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
+		// CORE__ignition_state = CORE__IGNITION_SM_L_IDLE;
+		CORE__ignition_state = CORE__IGNITION_DELAY;
+		CORE__ignition_sm_delay_next_state = CORE__IGNITION_SM_L_IDLE;
+		CORE__ignition_sm_delay = millis()+500UL;
+
 		Serial.println(ignition_requested_charging_voltage);
 	} else {
 		ignition_requested_charging_voltage = -1;

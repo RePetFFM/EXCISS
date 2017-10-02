@@ -129,7 +129,6 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 }
 
 void chargCap() {
-	
 	uint16_t current_cap_voltage_raw_analog = analogRead(A2);
 	uint16_t current_cap_voltage = map(current_cap_voltage_raw_analog, 0, 1023, 0, CHARGEMONITOR_VOLTAGE_MAX_CHARGE);
 	

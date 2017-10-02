@@ -9,7 +9,10 @@ int chargemonitor_last_after_ignition_voltage;
 
 int chargemonitor_get_charge()
 {
-	return analogRead(CORE__PIN_AIN_SCIENCE_ARC_CHARG_VOLTAGE)/3;
+	uint16_t current_cap_voltage_raw_analog = analogRead(CORE__PIN_AIN_SCIENCE_ARC_CHARG_VOLTAGE);
+	uint16_t current_cap_voltage = map(current_cap_voltage_raw_analog, 0, 1023, 0, CHARGEMONITOR_VOLTAGE_MAX_CHARGE);
+	
+	return current_cap_voltage;
 }
 
 void chargemonitor_begin()
