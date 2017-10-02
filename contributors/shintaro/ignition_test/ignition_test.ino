@@ -1,10 +1,26 @@
 #define CHARGEMONITOR_VOLTAGE_MAX_CHARGE 600
+#define CORE__PIN_PWM_POWERLED_FRONT     9
 
 uint16_t targetvoltage = 300;
-
 uint8_t ingition_requested = false;
 
+
+
+const int numReadings = 10;
+
+int readings[numReadings];      // the readings from the analog input
+int readIndex = 0;              // the index of the current reading
+int total = 0;                  // the running total
+int average = 0;                // the average
+
+int inputPin = A0;
+
 void setup() {
+	// set higher pwm frequency for the leds to prevent flicker in video recording
+	TCCR1B = TCCR1B & 0b11111000 | 0x01; // 0x01 = 31250Hz/1, 0x02 = 31250Hz/8
+
+	pinMode(CORE__PIN_PWM_POWERLED_FRONT, OUTPUT);
+
 	pinMode(11, INPUT_PULLUP); // charge
 	pinMode(10, INPUT_PULLUP); // ignition
 
@@ -18,6 +34,12 @@ void setup() {
 		delay(50);
 		digitalWrite(7,LOW);
 		delay(50);
+	}
+
+	analogWrite(CORE__PIN_PWM_POWERLED_FRONT, 100);
+
+	for (int thisReading = 0; thisReading < numReadings; thisReading++) {
+		readings[thisReading] = 0;
 	}
 }
 
@@ -66,7 +88,12 @@ void loop() {
 		digitalWrite(7,LOW);
 		nextLEDEvent = millis()+500UL;
 		ledOn = true;
-	}	
+	}
+
+	analogAvgRead();
+
+	Serial.print(average);
+	Serial.print("  ");
 }
 
 void SERIAL__Parser() {
@@ -154,6 +181,29 @@ void chargCap() {
 			Serial.println(current_cap_voltage);
 			digitalWrite(8,LOW);
 		}	
-	}
-	
+	}	
+}
+
+
+void analogAvgRead() {
+  // subtract the last reading:
+  total = total - readings[readIndex];
+  // read from the sensor:
+  readings[readIndex] = analogRead(inputPin);
+  // add the reading to the total:
+  total = total + readings[readIndex];
+  // advance to the next position in the array:
+  readIndex = readIndex + 1;
+
+  // if we're at the end of the array...
+  if (readIndex >= numReadings) {
+    // ...wrap around to the beginning:
+    readIndex = 0;
+  }
+
+  // calculate the average:
+  average = total / numReadings;
+  // send it to the computer as ASCII digits
+  // Serial.println(average);
+  delay(1);        // delay in between reads for stability
 }

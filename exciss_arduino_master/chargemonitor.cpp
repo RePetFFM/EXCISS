@@ -15,15 +15,6 @@ int chargemonitor_get_charge()
 	return current_cap_voltage;
 }
 
-void chargemonitor_begin()
-{
-	digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, CHARGEMONITOR_CHARGE_DISABLE);
-	digitalWrite(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, CHARGEMONITOR_IGNITE_DISABLE);
-	pinMode(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, OUTPUT);
-	pinMode(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, OUTPUT);
-	chargemonitor_target_voltage = 0;
-}
-
 void chargemonitor_start_charging(int voltage)
 {
 	chargemonitor_target_voltage = voltage;
@@ -49,12 +40,13 @@ bool chargemonitor_has_enough_charge()
 
 void chargemonitor_ignite()
 {
-	digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, CHARGEMONITOR_CHARGE_DISABLE);
+	
 	chargemonitor_last_target_voltage = chargemonitor_target_voltage;
 	chargemonitor_last_actual_voltage = chargemonitor_get_charge();
 
 	digitalWrite(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, CHARGEMONITOR_IGNITE_IGNITE);
 	delay(CHARGEMONITOR_IGNITE_TOGGLE_DURATION);
+	digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, CHARGEMONITOR_CHARGE_DISABLE);
 	digitalWrite(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, CHARGEMONITOR_IGNITE_DISABLE);
 	delay(CHARGEMONITOR_IGNITION_WAIT-CHARGEMONITOR_IGNITE_TOGGLE_DURATION);
 

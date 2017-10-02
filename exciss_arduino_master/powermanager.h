@@ -8,7 +8,6 @@ uint8_t powermanager_has_new_reference_time();
 uint8_t powermanager_has_command_reload_config();
 
 // misc
-uint32_t powermanager_current_time(); // in seconds since reference time
 uint32_t get_last_powercylce_command_timestamp();
 
 // power state

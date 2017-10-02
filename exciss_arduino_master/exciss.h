@@ -12,20 +12,18 @@
 
 // ------------------------------------
 // powermenegment
-#define POWERMANAGER_CELL_CAPACITY 3400*4
-#define POWERMANAGER_EXPERIMENT_MIN_CHARGE 50 // value unit is percent
-#define POWERMANAGER_SMALLTHINGS_MIN_CHARGE 20 // value unit is percent
+#define POWERMANAGER_CELL_CAPACITY                          3400*4
+#define POWERMANAGER_EXPERIMENT_MIN_CHARGE                  50 // value unit is percent
+#define POWERMANAGER_SMALLTHINGS_MIN_CHARGE                 20 // value unit is percent
 
-// #define POWERMANAGER_CALL_FREQUENCY 1 // call period (in seconds)
+#define POWERMANAGER_N_RELOADCONFIG                         4
 
-#define POWERMANAGER_N_RELOADCONFIG             4
+#define POWERMANAGER_POWERCYCLE_WINDOW_MILLIS               1000UL*60UL
+#define POWERMANAGER_POWERCYCLE_MIN_INTERVAL                2000UL
 
-#define POWERMANAGER_POWERCYCLE_WINDOW_MILLIS   1000UL*60UL
-#define POWERMANAGER_POWERCYCLE_MIN_INTERVAL    2000UL
+#define POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG             2
 
-#define POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG 2
-
-#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS        1000UL*60UL*5UL
+#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS           1000UL*60UL*5UL
 
 
 
@@ -103,12 +101,12 @@
 
 // ------------------------------------
 // init state machine value definitions
-#define CORE__INIT_EXECUTE  0xA5A5A5A5
-#define CORE__INIT_DONE     0x5A5A5A5A
+#define CORE__INIT_EXECUTE                  0xA5A5A5A5
+#define CORE__INIT_DONE                     0x5A5A5A5A
 
-#define CORE__INIT_STATE_I2C_BABYSITTER                     1101
-#define CORE__INIT_STATE_I2C_RTC                            1102
-#define CORE__INIT_STATE_END                                1900
+#define CORE__INIT_STATE_I2C_BABYSITTER     1101
+#define CORE__INIT_STATE_I2C_RTC            1102
+#define CORE__INIT_STATE_END                1900
 
 
 // ------------------------------------
@@ -119,10 +117,9 @@
 #define CORE__MAIN_SM_L_RECOVERMODE_DATATRANSFER_MODE       2001
 #define CORE__MAIN_SM_L_IDLE                                2101
 #define CORE__MAIN_SM_T_SCIENCE_GO                          2201
-#define CORE__MAIN_SM_T_SCIENCE_GO_DELAY                    2202
 #define CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP            2203
 #define CORE__MAIN_SM_L_SCIENCE_RASPI_KEEPALIVE             2204
-#define CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY             2205
+#define CORE__MAIN_SM_T_SCIENCE_POWERDOWN                   2205
 
 // execution delays
 #define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*10UL // flight
@@ -142,6 +139,7 @@
 // execution delays
 #define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL
 // #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*5UL
+// #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*5UL
 #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*3UL
 #define CORE__POWER_SM_DELAY_SYSTEM_OFF                     1000UL*60UL
 
@@ -160,6 +158,5 @@
 #define CORE__IGNITION_SM_T_IGNITION_READY                      4401
 #define CORE__IGNITION_SM_T_IGNITION_IGNITE                     4403
 #define CORE__IGNITION_SM_L_IGNITION_REDO                       4404
-#define CORE__IGNITION_SM_T_IGNITION_REDO_DELAY                 4405
 #define CORE__IGNITION_SM_T_ABORT_DUE_FAILURE                   4901
 

@@ -158,11 +158,6 @@ uint8_t powermanager_shutdown_requested() {
     return powermanager_shutdown_request;
 }
 
-uint32_t powermanager_current_time() // in seconds since 0:00:00
-{
-    return (millis() - last_timeref_millis) / 1000;
-}
-
 // power state
 uint8_t powermanager_has_power_for_experiment()
 { // minimum battery level and power good

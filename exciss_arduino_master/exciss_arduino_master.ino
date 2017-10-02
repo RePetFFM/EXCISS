@@ -94,7 +94,6 @@ void loop() {
 	}
 
 	wdt_reset(); // reset watchdog timer
-
 	
 }
 
@@ -270,15 +269,12 @@ void CORE__statemachine_main() {
 			// flush serial buffer and enable serial parser
 			USB_DATASWITCH_switch_to_science_mode();
 			powermanager_8V_on();
-			main_statemachine_delay = millis()+100; // wait for 100 millis befor turn on raspberry pi
-			CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO_DELAY;
+			
+			CORE__main_state = CORE__MAIN_SM_DELAY;
+			CORE__main_sm_delay_next_state = CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP;
+			CORE__main_sm_delay = millis()+100UL;
 		break;
 
-		case CORE__MAIN_SM_T_SCIENCE_GO_DELAY:
-			if(millis()>=main_statemachine_delay) {
-				CORE__main_state = CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP;
-			}
-		break;
 
 		case CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP:
 			// powering up 5V switched power rail. The raspberry pi will begin with booting
@@ -298,13 +294,13 @@ void CORE__statemachine_main() {
 
 				CORE__ignition_state = CORE__IGNITION_SM_L_OFF;
 
-				main_statemachine_delay = millis() + SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN;
-
-				CORE__main_state = CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY;
+				CORE__main_state = CORE__MAIN_SM_DELAY;
+				CORE__main_sm_delay_next_state = CORE__MAIN_SM_T_SCIENCE_POWERDOWN;
+				CORE__main_sm_delay = millis()+SCIENCE__DEFAULT_WAIT_UNTIL_POWERDOWN;
 			}
 		break;
 
-		case CORE__MAIN_SM_T_SCIENCE_POWERDOWN_DELAY:
+		case CORE__MAIN_SM_T_SCIENCE_POWERDOWN:
 			if(millis()>main_statemachine_delay) {
 				CORE__operation_mode = CORE__OPERATION_MODE_SCIENCE; 
 				CORE__powermanagment_state = CORE__POWER_SM_L_IDLE_MODE;
@@ -395,8 +391,7 @@ void CORE__statemachine_powermanagment() {
 			OPERATIONS__do_system_off();
 		break;
 
-	}
-	
+	}	
 }
 
 uint8_t ignition_fail_counter = 0;
@@ -503,8 +498,10 @@ void CORE__statemachine_ignition() {
 				ignition_fail_counter++;
 				Serial.print("IG_F"); // F = fail
 				Serial.println(ignition_fail_counter);
-				ignition_retry_delay = millis()+CORE_IGNITION_RETRY_DELAY_MILLIS;
-				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_REDO_DELAY;
+
+				CORE__ignition_state = CORE__IGNITION_DELAY;
+				CORE__ignition_sm_delay = millis()+CORE_IGNITION_RETRY_DELAY_MILLIS;
+				CORE__ignition_sm_delay_next_state = CORE__IGNITION_SM_T_IGNITION_IGNITE;
 				ingition_requested = false;
 			} else if(ignition_fail_counter==0) {
 				Serial.println("IG_GOOD"); // G = good
@@ -513,13 +510,6 @@ void CORE__statemachine_ignition() {
 			} else {
 				ignition_failure_code = 21;
 				CORE__ignition_state = CORE__IGNITION_SM_T_ABORT_DUE_FAILURE;
-			}
-		break;
-
-		case CORE__IGNITION_SM_T_IGNITION_REDO_DELAY:
-			// wait for next retry ignition
-			if(millis()>=ignition_retry_delay) {
-				CORE__ignition_state = CORE__IGNITION_SM_T_IGNITION_IGNITE;
 			}
 		break;
 
