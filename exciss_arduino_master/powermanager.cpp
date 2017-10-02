@@ -39,7 +39,7 @@ uint8_t powermanager_get_usb_power_status() {
 }
 
 uint32_t get_last_powercylce_command_timestamp() {
-    return powercycle_command_first_signal_timestamp;
+    return millis()-powercycle_command_first_signal_timestamp;
 }
 
 // power switching
@@ -86,6 +86,7 @@ void powermanager_poll_powercycle_command()
         if(powermanager_powercycle_timeout_millis==0 && usb_power_status==0xFFFFFFFF) {
             Serial.println("Start cycle");
             powermanager_powercycle_timeout_millis = millis() + POWERMANAGER_POWERCYCLE_WINDOW_MILLIS;
+            powercycle_command_first_signal_timestamp = millis();
             power_cycle_valid_command_count++;
             Serial.println(powermanager_powercycle_timeout_millis);
             Serial.println(millis());
@@ -121,7 +122,7 @@ void powermanager_poll_powercycle_command()
             powermanager_status |= (1<<POWERMANAGER_STATUSBIT_HAS_RELOADCONFIG);
         }
         
-        powercycle_command_first_signal_timestamp = powermanager_powercycle_timeout_millis;
+        //powercycle_command_first_signal_timestamp = powermanager_powercycle_timeout_millis;
 
         last_power_change_millis = 0UL;
         powermanager_powercycle_timeout_millis = 0UL;

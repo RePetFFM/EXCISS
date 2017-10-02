@@ -85,7 +85,7 @@
 
 // voltage threshold for determining whether ignition was successful (capacitor discharged to ca. 70V) - set above physical threshold
 #define CHARGEMONITOR_EMPTY_THRESHOLD 100
-#define CHARGEMONITOR_VOLTAGE_MAX_CHARGE 600 // 400/3 // beware of integer divisions!
+#define CHARGEMONITOR_VOLTAGE_MAX_CHARGE 600
 
 
 // ------------------------------------
@@ -138,15 +138,15 @@
 #define CORE__POWER_SM_L_RECOVERY_MODE_START_SCU            3301
 
 // execution delays
-#define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL*5UL
+#define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL*1UL
 // #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*30UL // flight version
-#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*10UL // dev version
+#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*3UL // dev version
 
 
 
 // miscellaneous
 // #define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*5UL // flight version
-#define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*30UL  // dev version
+#define CORE__POWER_MIN_KEEPALIVE_TIME_MILLIS               1000UL*60UL*10UL  // dev version
 
 // ------------------------------------
 // ignition managment state machine definitions

@@ -678,12 +678,12 @@ void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
 		if (j<6) {
 			// recover_start_datetime_ut + recover_mode_last_entered_ut;
 
-			uint32_t last_powercycle_timestamp_seconds = get_last_powercylce_command_timestamp() * 1000UL;
+			uint32_t last_powercycle_timestamp_seconds = get_last_powercylce_command_timestamp() / 1000UL;
 
-			DateTime recover_date_time_unixtime = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]).unixtime();
+			DateTime recover_date_time_unixtime = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]);
 
-			uint32_t recover_current_date_time = recover_date_time_unixtime.secondstime()+last_powercycle_timestamp_seconds;
-			
+			uint32_t recover_current_date_time = recover_date_time_unixtime.unixtime()+last_powercycle_timestamp_seconds;
+
 			rtc.adjust(DateTime(recover_current_date_time));
 		}
 	} else {
