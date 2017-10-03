@@ -45,12 +45,12 @@ uint32_t get_last_powercylce_command_timestamp() {
 }
 
 // power switching
-void powermanager_8V_on() {
-    digitalWrite(CORE__PIN_DOUT_MOSFET_8V,HIGH);
+void powermanager_11V_on() {
+    digitalWrite(CORE__PIN_DOUT_MOSFET_11V,HIGH);
 }
 
-void powermanager_8V_off() {
-    digitalWrite(CORE__PIN_DOUT_MOSFET_8V,LOW); 
+void powermanager_11V_off() {
+    digitalWrite(CORE__PIN_DOUT_MOSFET_11V,LOW); 
 }
 
 void powermanager_5V_on() {

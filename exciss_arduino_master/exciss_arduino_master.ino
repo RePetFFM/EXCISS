@@ -110,10 +110,10 @@ void CORE__init_pins() {
 
 	// left side
 	pinMode(CORE__PIN_DOUT_MOSFET_5V, OUTPUT);
-	pinMode(CORE__PIN_DOUT_MOSFET_8V, OUTPUT);
+	pinMode(CORE__PIN_DOUT_MOSFET_11V, OUTPUT);
 	pinMode(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, OUTPUT);
 	pinMode(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, OUTPUT);
-	pinMode(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, OUTPUT);
+	pinMode(CORE__PIN_DOUT_SCIENCE_HVU_ENABLE, OUTPUT);
 	pinMode(CORE__PIN_PWM_POWERLED_FRONT, OUTPUT);
 
 	// right side
@@ -125,16 +125,16 @@ void CORE__init_pins() {
 
 	// initial pin state
 	digitalWrite(CORE__PIN_DOUT_MOSFET_5V, LOW);
-	digitalWrite(CORE__PIN_DOUT_MOSFET_8V, LOW);
+	digitalWrite(CORE__PIN_DOUT_MOSFET_11V, LOW);
 	digitalWrite(CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN, LOW);
 	digitalWrite(CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER, LOW);
-	digitalWrite(CORE__PIN_DOUT_SCIENCE_ARC_CHARG, LOW);
+	digitalWrite(CORE__PIN_DOUT_SCIENCE_HVU_ENABLE, LOW);
 
 	powermanager_vsys_on();
 	POWERLED_frontlight(0);
 	POWERLED_backlight(0);
 
-	powermanager_8V_off();
+	powermanager_11V_off();
 	powermanager_5V_off();
 	USB_DATASWITCH_switch_to_transfer_mode();
 }
@@ -268,7 +268,7 @@ void CORE__statemachine_main() {
 			// switch USB to raspberry pi
 			// flush serial buffer and enable serial parser
 			USB_DATASWITCH_switch_to_science_mode();
-			powermanager_8V_on();
+			powermanager_11V_on();
 			
 			CORE__main_state = CORE__MAIN_SM_DELAY;
 			CORE__main_sm_delay_next_state = CORE__MAIN_SM_T_SCIENCE_GO_RASPI_POWERUP;
@@ -304,7 +304,7 @@ void CORE__statemachine_main() {
 			if(millis()>main_statemachine_delay) {
 				CORE__operation_mode = CORE__OPERATION_MODE_SCIENCE; 
 				CORE__powermanagment_state = CORE__POWER_SM_L_IDLE_MODE;
-				powermanager_8V_off();
+				powermanager_11V_off();
 				powermanager_5V_off();
 				USB_DATASWITCH_switch_to_transfer_mode();
 				CORE__main_state = CORE__MAIN_SM_L_IDLE;
@@ -573,7 +573,7 @@ void OPERATIONS__send_raspberry_shutdown_signal() {
 void OPERATIONS__do_system_off() {
 	POWERLED_frontlight(0);
 	POWERLED_backlight(0);
-	powermanager_8V_off();
+	powermanager_11V_off();
 	powermanager_5V_off();
 	USB_DATASWITCH_switch_to_transfer_mode();
 	powermanager_vsys_off();

@@ -29,14 +29,14 @@
 
 
 // ------------------------------
-// pinout mapping revision 00E
+// pinout mapping revision 00F
 
 // left side
 #define CORE__PIN_DOUT_MOSFET_5V                            4
-#define CORE__PIN_DOUT_MOSFET_8V                            5
+#define CORE__PIN_DOUT_MOSFET_11V                           5
 #define CORE__PIN_DOUT_FORCE_RASPI_SHUTDOWN                 6
 #define CORE__PIN_DOUT_SCIENCE_IGNITION_SPARK_TRIGGER       7
-#define CORE__PIN_DOUT_SCIENCE_ARC_CHARG                    8
+#define CORE__PIN_DOUT_SCIENCE_HVU_ENABLE                   8
 #define CORE__PIN_PWM_POWERLED_FRONT                        9
 
 // right side
@@ -138,9 +138,7 @@
 
 // execution delays
 #define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL
-// #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*5UL
-// #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*5UL
-#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*3UL
+#define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*5UL
 #define CORE__POWER_SM_DELAY_SYSTEM_OFF                     1000UL*60UL
 
 // miscellaneous

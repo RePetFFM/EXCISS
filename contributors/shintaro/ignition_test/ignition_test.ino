@@ -13,7 +13,7 @@ int readIndex = 0;              // the index of the current reading
 int total = 0;                  // the running total
 int average = 0;                // the average
 
-int inputPin = A0;
+int inputPin = A2;
 
 void setup() {
 	// set higher pwm frequency for the leds to prevent flicker in video recording
@@ -44,6 +44,8 @@ void setup() {
 }
 
 uint8_t docharge = 0;
+
+int counterA = 0;
 
 void loop() {
 	SERIAL__Parser();
@@ -90,10 +92,10 @@ void loop() {
 		ledOn = true;
 	}
 
-	analogAvgRead();
+	counterA++;
 
-	Serial.print(average);
-	Serial.print("  ");
+	
+	delay(10);
 }
 
 void SERIAL__Parser() {
@@ -159,6 +161,10 @@ void chargCap() {
 	uint16_t current_cap_voltage_raw_analog = analogRead(A2);
 	uint16_t current_cap_voltage = map(current_cap_voltage_raw_analog, 0, 1023, 0, CHARGEMONITOR_VOLTAGE_MAX_CHARGE);
 	
+	uint16_t ave = avarege(current_cap_voltage);
+
+	Serial.print(ave);
+	Serial.print(" ");
 	Serial.println(current_cap_voltage);
 
 	if(docharge==1) {
@@ -185,12 +191,12 @@ void chargCap() {
 }
 
 
-void analogAvgRead() {
+uint16_t avarege(uint16_t val) {
   // subtract the last reading:
   total = total - readings[readIndex];
   // read from the sensor:
-  readings[readIndex] = analogRead(inputPin);
-  // add the reading to the total:
+  readings[readIndex] = val;
+ // add the reading to the total:
   total = total + readings[readIndex];
   // advance to the next position in the array:
   readIndex = readIndex + 1;
@@ -202,8 +208,5 @@ void analogAvgRead() {
   }
 
   // calculate the average:
-  average = total / numReadings;
-  // send it to the computer as ASCII digits
-  // Serial.println(average);
-  delay(1);        // delay in between reads for stability
+  return total / numReadings;
 }
