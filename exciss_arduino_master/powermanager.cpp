@@ -2,14 +2,8 @@
 #include "exciss.h"
 
 
-uint8_t powermanager_status = 0;
-uint64_t last_timeref_millis = 0;
-
-uint32_t powercycle_command_first_signal_timestamp = 0UL;
-
 uint8_t powermanager_shutdown_request = 0xA5;
 
-uint8_t request_recovery_mode = 0xA5;
 
 inline uint8_t get_pgood()
 {
@@ -38,10 +32,6 @@ uint16_t powermanager_get_capacity() {
 
 uint8_t powermanager_get_usb_power_status() {
     return get_pgood();
-}
-
-uint32_t get_last_powercylce_command_timestamp() {
-    return millis()-powercycle_command_first_signal_timestamp;
 }
 
 // power switching
@@ -74,19 +64,7 @@ void powermanager_poll_powercycle_command()
     static uint32_t last_power_good_millis = 0UL;
     static uint32_t usb_power_status = 0;
     static uint32_t previous_usb_power_status = 0;    
-    static uint8_t power_cycle_valid_command_count = 0;
-    static uint32_t powermanager_powercycle_timeout_millis = 0UL;
-    static uint32_t last_power_change_millis = 0UL;
-    static uint8_t first_power_on = 0xA5;
-
-
-    /*
-    if(first_power_on==0xA5) {
-        powercycle_command_first_signal_timestamp = millis();
-        powermanager_powercycle_timeout_millis = millis() + 50;
-        first_power_on = 0x5A;
-    }
-    */
+    
 
     get_pgood() ? usb_power_status = (usb_power_status<<1) | 1 : usb_power_status = usb_power_status<<1;
 
@@ -94,29 +72,10 @@ void powermanager_poll_powercycle_command()
     if((usb_power_status==0xFFFFFFFF || usb_power_status==0) && usb_power_status != previous_usb_power_status)
     {
         previous_usb_power_status = usb_power_status;
-
-        if(powermanager_powercycle_timeout_millis==0UL && usb_power_status==0xFFFFFFFF) {
-            Serial.println("Start cycle");
-            powermanager_powercycle_timeout_millis = millis() + POWERMANAGER_POWERCYCLE_WINDOW_MILLIS;
-            powercycle_command_first_signal_timestamp = millis();
-            power_cycle_valid_command_count++;
-        }
-        
-        
+    
         Serial.print("PGOOD: ");
         Serial.println(usb_power_status,HEX);
     
-        if(last_power_change_millis>0UL && power_cycle_valid_command_count>0) {
-            if( millis()>last_power_change_millis+POWERMANAGER_POWERCYCLE_MIN_INTERVAL) {
-                power_cycle_valid_command_count++;
-                Serial.print("valid count");
-                Serial.println(power_cycle_valid_command_count);
-            }
-        }
-
-        last_power_change_millis = millis();
-        
-
         if(usb_power_status==0xFFFFFFFF) {
             last_power_good_millis = 0UL;
         } else {
@@ -124,35 +83,14 @@ void powermanager_poll_powercycle_command()
         }
     }
 
-    if(powermanager_powercycle_timeout_millis>0UL && millis()>powermanager_powercycle_timeout_millis)
-    {
-        Serial.println("powercommand max wait time");
-        if(power_cycle_valid_command_count == POWERMANAGER_N_RELOADCONFIG) {
-            Serial.println("RELOAD CONFIG REQUEST");
-            request_recovery_mode = 0x5A;
-        }
-        
-        // powercycle_command_first_signal_timestamp = powermanager_powercycle_timeout_millis;
-
-        last_power_change_millis = 0UL;
-        powermanager_powercycle_timeout_millis = 0UL;
-        power_cycle_valid_command_count = 0;
-    } 
 
     if(powermanager_shutdown_request==0xA5 && last_power_good_millis>0UL && millis()>(last_power_good_millis+POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS)) {
         Serial.println("FORCE POWER DOWN DUE TO USB POWER DOWN ");
         powermanager_shutdown_request = 0x5A;
-        // powermanager_vsys_off();
     }
 }
 
-// power-cycle command requests
-uint8_t powermanager_has_command_reload_config()
-{
-    return request_recovery_mode;
-}
 
-// misc
 
 uint8_t powermanager_shutdown_requested() {
     return powermanager_shutdown_request;

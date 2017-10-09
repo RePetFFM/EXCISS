@@ -16,7 +16,7 @@
 #define POWERMANAGER_EXPERIMENT_MIN_CHARGE                  50 // value unit is percent
 #define POWERMANAGER_SMALLTHINGS_MIN_CHARGE                 20 // value unit is percent
 
-#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS           1000UL*60UL*10UL
+#define POWERMANAGER_FORCE_POWER_DOWN_WAIT_MILLIS           1000UL*20UL
 
 
 
@@ -58,7 +58,7 @@
 #define CHARGEMONITOR_VOLTAGE_MAX_CHARGE            600
 #define CORE_IGNITION_MAX_CHARGTIME_MILLIS          1000UL*300UL
 #define CORE_IGNITION_RETRY_MAX_COUNT               5
-#define CORE_IGNITION_RETRY_DELAY_MILLIS            500
+#define CORE_IGNITION_RETRY_DELAY_MILLIS            300
 #define CORE_IGNITION_MIN_CHARG_VOLTAGE             150
 #define CORE_IGNITION_MAX_CHARG_VOLTAGE             600
 
@@ -115,7 +115,8 @@
 #define CORE__MAIN_SM_T_SCIENCE_POWERDOWN                   2205
 
 // execution delays
-#define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*60UL*5UL // flight
+#define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*10UL // flight
+// #define CORE__MAIN_SM_DELAY_EXIT_RECOVERYMODE_MILLIS        1000UL*10UL*1UL
 
 // ------------------------------------
 // power managment state machine definitions
@@ -131,7 +132,6 @@
 // execution delays
 #define CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS      1000UL*60UL
 #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*60UL*5UL
-// dev edition #define CORE__POWER_SM_DELAY_ENTER_SCU_POWERON_MILLIS       1000UL*10UL
 #define CORE__POWER_SM_DELAY_SYSTEM_OFF                     1000UL*60UL
 
 // miscellaneous

@@ -1,9 +1,11 @@
+// #include "exciss.h"
+#include "exciss.h"
+
 
 #include <Wire.h>
 #include <EEPROM.h>
 #include <avr/wdt.h>
 #include "RTClib.h"
-#include "exciss.h"
 #include "Adafruit_DRV2605.h"
 #include "powermanager.h"
 #include "chargemonitor.h"
@@ -354,16 +356,7 @@ void CORE__statemachine_powermanagment() {
 		break;
 
 		case CORE__POWER_SM_L_IDLE_MODE:
-			if(powermanager_has_command_reload_config()==0x5A) {
-				Serial.println("reload config");
-				timestamp_recoverymodus_requested = millis();
-				OPERATIONS__send_raspberry_shutdown_signal();
-				
-				// set delay. Waiting for gracefull SCU shutdown state.
-				CORE__powermanagment_state = CORE__POWER_SM_DELAY;
-				CORE__powermanagment_sm_delay_next_state = CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER;	
-				CORE__powermanagment_sm_delay = millis() + CORE__POWER_SM_DELAY_ENTER_RECOVERYMODE_MILLIS;
-			}
+			
 		break;
 		
 		case CORE__POWER_SM_ENTER_RECOVERY_MODE_DATATRANSFER:
@@ -501,7 +494,7 @@ void CORE__statemachine_ignition() {
 
 				CORE__ignition_state = CORE__IGNITION_DELAY;
 				CORE__ignition_sm_delay = millis()+CORE_IGNITION_RETRY_DELAY_MILLIS;
-				CORE__ignition_sm_delay_next_state = CORE__IGNITION_SM_T_IGNITION_IGNITE;
+				CORE__ignition_sm_delay_next_state = CORE__IGNITION_SM_L_CHARGE;
 				ingition_requested = false;
 			} else if(ignition_fail_counter==0) {
 				Serial.println("IG_GOOD"); // G = good
@@ -704,11 +697,11 @@ void DS3231__set_Time(String new_Time, bool timeRecoverMode) {
 		if (j<6) {
 			// recover_start_datetime_ut + recover_mode_last_entered_ut;
 
-			uint32_t last_powercycle_timestamp_seconds = get_last_powercylce_command_timestamp() / 1000UL;
+			uint32_t last_poweron_timestamp_in_seconds = millis() / 1000UL;
 
 			DateTime recover_date_time_unixtime = DateTime((uint16_t)rtc_Time[0],rtc_Time[1],rtc_Time[2],rtc_Time[3],rtc_Time[4],rtc_Time[5]);
 
-			uint32_t recover_current_date_time = recover_date_time_unixtime.unixtime()+last_powercycle_timestamp_seconds;
+			uint32_t recover_current_date_time = recover_date_time_unixtime.unixtime()+last_poweron_timestamp_in_seconds;
 
 			rtc.adjust(DateTime(recover_current_date_time));
 		}
@@ -951,6 +944,7 @@ void SERIAL__ParserExecute(char * buf,uint8_t cnt) {
 				buf[0] = ' ';
 				buf[1] = ' ';
 				tmpLong = atoi((const char*)&buf[2]);
+				tmpLong = 350;
 				Serial.print("IG CHARG REQUEST ACK ");
 				Serial.println(tmpLong);
 				IGNITION_request_charging(tmpLong);
