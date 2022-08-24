@@ -1,0 +1,91 @@
+###############################################################################
+#
+# SCU_Profile.101
+#
+# Science experiment profile / technical test
+#
+# Tests components of the experiment,
+# e.g. vibration and camera, without an ignition.
+# Amount of data should be small.
+#
+# DO NOT USE shebang (#!) IN LINE ONE OR 'exit' ANYWHERE IN THIS SCRIPT!
+#
+# $LOCATION ${SCU_HOME}/profiles
+#
+# $REQUIRES FILE ${SCU_HOME}/bin/MLU_camera
+# $REQUIRES FILE ${SCU_HOME}/bin/MLU_LED
+# $REQUIRES FILE ${SCU_HOME}/bin/MLU_shaker
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_Profile.101
+# $VERSION_NUMBER 0.5.1
+# $VERSION_DATE 2018-07-25_02:55:00
+#
+###############################################################################
+
+#
+# Take one dark image
+#
+MLU_LED -a -i 0                                  # turn off front+back LED
+MLU_camera -s -n ImgCal_f0b0                     # take 1 still image
+
+#
+# Take one bright image
+#
+MLU_LED -b -i 20                                 # turn on back LED at 20/255
+MLU_camera -s -n ImgCal_f0b20                    # take 1 still image
+
+#
+# Record video for 1m
+#
+MLU_camera -d -t 60 -n VidCal_f0b20              # record 60s video with 40fps
+
+#
+# Vibration 1x 5s
+#
+MLU_LED -a -i 0                                  # turn off front+back LED
+MLU_shaker -t 5                                  # shake 5s
+
+#
+# Take one bright image
+#
+MLU_LED -b -i 20                                 # turn on back LED at 20/255
+MLU_camera -s -n ImgCal_f0b20                    # take 1 still image
+
+#
+# Repeat 10x
+#
+for ((i=1;i<=10;i++)); do                        # repeat 10 times
+
+	echo "Iteration: ${i}"
+
+	#
+	# Wait for 1m
+	#
+	MLU_LED -a -i 0                               # turn off front+back LED
+	sleep 60                                      # wait for 60s
+
+	#
+	# Record video for 10s
+	#
+	MLU_LED -b -i 20                              # turn on back LED at 20/255
+	MLU_camera -d -t 10 -n VidCal_f0b20_${i}      # record 10s video with 40fps
+
+	#
+	# Take one bright image
+	#
+	MLU_camera -s -n ImgCal_f0b20_${i}            # take 1 still image
+
+	#
+	# Take one dark image
+	#
+	MLU_LED -a -i 0                               # turn off front+back LED
+	MLU_camera -s -n ImgCal_f0b0_${i}             # take 1 still image
+
+done
+
+###############################################################################
+# EOF
+###############################################################################
+

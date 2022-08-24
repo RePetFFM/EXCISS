@@ -1,0 +1,543 @@
+#!/bin/bash
+###############################################################################
+#
+# SCU_cycle
+#
+# Reports or increments the SCU cycle number.
+#
+# $LOCATION ${SCU_HOME}/bin
+#
+# $REQUIRES VARIABLE SCU_HOME
+# $REQUIRES LIBRARY ${SCU_HOME}/lib/lib_SCU_base
+# $REQUIRES FILE ${SCU_HOME}/var/SCU_cycle_number.cf
+#
+# $RETURNS 0 success
+# $RETURNS 1 general error
+# $RETURNS 2 invalid option or argument
+# $RETURNS 3 failed to load environment
+# $RETURNS 4 error performing requested task
+#
+# $COMPONENT_NAME MLU.SCU.SCU_setup
+# $VERSION_NUMBER 0.5.1
+# $VERSION_DATE 2018-05-06_23:59:00
+#
+###############################################################################
+# set -x
+unalias -a
+
+#------------------------------------------------------------------------------
+# Define global environment variables
+#------------------------------------------------------------------------------
+
+MY_START_TIME="$(date +%Y-%m-%d_%H:%M:%S)" # current time early after start
+MY_DIR_NAME="$(dirname $0)" # directory where this script is located
+MY_FILE_NAME="$(basename $0)" # file name of this script (without path)
+MY_BASE_NAME="$(basename ${MY_FILE_NAME} .sh)" # script name without ".sh"
+MY_EXEC_USER="$(whoami 2>/dev/null)" # name of user who started this script
+MY_PROCESS_ID="$(ps -fp $$ -o pid= | awk '{print $1}')" # PID of this script
+MY_PARENT_ID="$(ps -fp $$ -o ppid= | awk '{print $1}')" # PID of parent process
+MY_ARG_COUNT="$#" # number of parameters passed to this script
+MY_ARG_LIST="$@" # list of all parameters passed to this script
+WORK_DIR_NAME="$(pwd)" # current work directory of shell starting this script
+typeset -i RETURN_CODE=0 # return code of previous command (0=success)
+typeset -i MY_EXIT_RC=1 # return code of this script (0=success)(default=1)
+typeset -i OPT_EXCLUSIVE_COUNT=0 # counter for mutually exclusive options
+typeset -i OPT_REQUIRED_COUNT=0 # counter for required options
+
+F_LIB_SCU_BASE_NAME="lib_SCU_base" # library lib_SCU_base
+F_LIB_SCU_BASE_REL="lib/${F_LIB_SCU_BASE_NAME}" # relative dir
+
+SCU_CYCLE_NUMBER="" # current cycle number of SCU
+NEW_CYCLE_NUMBER="" # updated cycle number of SCU
+SCU_CYCLE_DATE="" # time stamp of last cycle number update
+NEW_CYCLE_DATE="" # time stamp of newly updated cycle number
+
+F_CYCLE_INC_LOG_NAME="${MY_BASE_NAME}_increment.log" # cycle number log file
+F_CYCLE_INC_LOG_REL="log/${F_CYCLE_INC_LOG_NAME}" # relative dir
+
+#------------------------------------------------------------------------------
+#
+# Function f_Print_Help
+#
+# Shows the usage of this script.
+# Usage: f_Print_Help
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Print_Help {
+
+	echo "Usage: ${MY_FILE_NAME} [{-i|-r}][-v][-V][-h]"
+	echo "Reports or increments the SCU cycle number."
+	echo
+	echo "  -i     increment cycle number by one"
+	echo "  -r     refresh cycle number from all available sources"
+	echo "  -v     print verbose output"
+	echo "  -V     print version of this script"
+	echo "  -h     print this help message"
+	echo
+	echo "If no option is given, just reports the current cycle number."
+	echo
+	echo "Example: ${MY_FILE_NAME} -i"
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Load_SCU_Env
+#
+# Loads the SCU environment with global variables.
+# Usage: f_Load_SCU_Env
+# Returns: 0 success
+# Returns: 1 invalid $SCU_HOME
+# Returns: 2 SCU_env file not found
+# Returns: 3 failed to load SCU_env
+#------------------------------------------------------------------------------
+
+function f_Load_SCU_Env {
+
+	if [[ -z "${SCU_HOME}" ]]; then
+
+		echo "ERROR: Variable SCU_HOME not defined in environment!" >&2
+		return 1
+
+	else
+
+		if [[ ! -e "${SCU_HOME}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: Directory SCU_HOME=${SCU_HOME} does not exist!" >&2
+			fi
+			return 2
+
+		elif [[ ! -e "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: SCU_HOME=${SCU_HOME} is not a valid SCU" \
+					"installation!" >&2
+			fi
+			return 2
+
+		else
+
+			if "${OPTION_LOWER_V}"; then
+				echo "Calling library function:" \
+					"${SCU_HOME}/${F_LIB_SCU_BASE_REL} f_SCU_Load_Env" >&2
+			fi
+
+			export SCU_HOME # export current SCU_HOME for calls to libraries
+			unset SCU_ENV_VERSION_NUMBER SCU_ENV_VERSION_DATE # clear variables
+			. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Load_Env # source SCU_env
+
+			if [[ -n "${SCU_ENV_VERSION_NUMBER}" && \
+					-n "${SCU_ENV_VERSION_DATE}" ]]; then
+
+				if "${OPTION_LOWER_V}"; then
+					echo "Successfully loaded SCU environment version:" \
+						"${SCU_ENV_VERSION_NUMBER} (${SCU_ENV_VERSION_DATE})" >&2
+					echo "Using SCU_HOME=${SCU_HOME}" >&2
+					echo >&2
+				fi
+				return 0
+
+			else
+
+				if "${OPTION_LOWER_V}"; then
+					echo "ERROR: Failed to load SCU environment in" \
+						"SCU_HOME=${SCU_HOME}!" >&2
+				fi
+				return 3
+
+			fi
+
+		fi
+
+	fi
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_SCU_cycle_number_cf_Header
+#
+# Prints the file header for new SCU_cycle_number.cf files.
+# Usage: f_SCU_cycle_number_cf_Header
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_SCU_cycle_number_cf_Header {
+
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+
+	if [[ -z "${MY_VERSION_NUMBER}" ]]; then
+		MY_VERSION_NUMBER="0.0.0"
+	fi
+	if [[ -z "${MY_VERSION_DATE}" ]]; then
+		MY_VERSION_DATE="1970-01-01_00:00:00"
+	fi
+
+	cat << 'EOF'
+###############################################################################
+#
+# SCU_cycle_number.cf
+#
+# Keeps track of unique SCU cycle number to identify current SCU execution.
+#
+# $LOCATION ${SCU_HOME}/var
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_cycle_number.cf
+EOF
+echo "# \$VERSION_NUMBER ${MY_VERSION_NUMBER}"
+echo "# \$VERSION_DATE ${MY_VERSION_DATE}"
+	cat << 'EOF'
+#
+###############################################################################
+EOF
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_SCU_cycle_increment_log_Header
+#
+# Prints the file header for new SCU_cycle_increment.log files.
+# Usage: f_SCU_cycle_increment_log_Header
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_SCU_cycle_increment_log_Header {
+
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+
+	if [[ -z "${MY_VERSION_NUMBER}" ]]; then
+		MY_VERSION_NUMBER="0.0.0"
+	fi
+	if [[ -z "${MY_VERSION_DATE}" ]]; then
+		MY_VERSION_DATE="1970-01-01_00:00:00"
+	fi
+
+	cat << 'EOF'
+###############################################################################
+#
+# SCU_cycle_increment.log
+#
+# Logs updates to the SCU cycle number - one line per new cycle.
+#
+# $LOCATION ${SCU_HOME}/log
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_cycle_increment.log
+EOF
+echo "# \$VERSION_NUMBER ${MY_VERSION_NUMBER}"
+echo "# \$VERSION_DATE ${MY_VERSION_DATE}"
+	cat << 'EOF'
+#
+###############################################################################
+EOF
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Standard_file_Footer
+#
+# Prints the standard file footer for new files.
+# Usage: f_Standard_file_Footer
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Standard_file_Footer {
+
+	cat << 'EOF'
+###############################################################################
+# EOF
+###############################################################################
+EOF
+
+}
+
+#------------------------------------------------------------------------------
+# Parse command line parameters
+#------------------------------------------------------------------------------
+
+GETOPTS_OPTSTRING=":irvVh" # needs to start with ':' for quiet mode
+
+OPTION_LOWER_I=false
+OPTION_LOWER_R=false
+OPTION_LOWER_V=false
+OPTION_UPPER_V=false
+OPTION_LOWER_H=false
+OPTION_NONE=false
+
+#
+# Print help (-h|-?) and version (-V) on priority
+# (will not work if given as an argument to an option requiring arguments)
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts ${GETOPTS_OPTSTRING} CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"v")
+			OPTION_LOWER_V=true
+			;;
+		"V")
+			OPTION_UPPER_V=true
+			;;
+		"h")
+			OPTION_LOWER_H=true
+			;;
+		"?")
+			if [[ "${OPTARG}" == "?" ]]; then
+				OPTION_LOWER_H=true
+			fi
+			;;
+	esac
+done
+
+if "${OPTION_LOWER_H}"; then
+	f_Print_Help
+	exit 0
+fi
+
+if "${OPTION_UPPER_V}"; then
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	if [[ -n "${MY_VERSION_NUMBER}" && -n "${MY_VERSION_DATE}" ]]; then
+		echo "${MY_BASE_NAME} version ${MY_VERSION_NUMBER}" \
+			"(${MY_VERSION_DATE})"
+		exit 0
+	else
+		echo "ERROR: Can not find version information" \
+			"for ${MY_BASE_NAME}!" >&2
+		exit 1
+	fi
+fi
+
+#
+# Parse remaining command line options and arguments
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts "${GETOPTS_OPTSTRING}" CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"i")
+			OPTION_LOWER_I=true
+			;;
+		"r")
+			OPTION_LOWER_R=true
+			;;
+		"?")
+			echo "ERROR: Invalid option -${OPTARG} specified!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+		":")
+			echo "ERROR: Option -${OPTARG} requires an argument!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+	esac
+done
+
+#
+# Parse trailing positional parameters
+# ($OPTIND, $OPTIND+1, $OPTIND+2, ...)
+#
+
+POS_PARAM1="${@:$OPTIND:1}"
+if [[ -n "${POS_PARAM1}" ]]; then
+	echo "ERROR: Parameter ${POS_PARAM1} not expected!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify mutual exclusive parameters
+#
+
+"${OPTION_LOWER_I}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_R}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+if [[ "${OPT_EXCLUSIVE_COUNT}" -gt 1 ]]; then
+	echo "ERROR: Options {-i|-r} are mutually exclusive!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify required parameters are present
+#
+
+"${OPTION_LOWER_I}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_R}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+if [[ ${OPT_REQUIRED_COUNT} -le 0 ]]; then
+	OPTION_NONE=true # there is no required parameter for this script
+fi
+
+#------------------------------------------------------------------------------
+# Load SCU environment with global variables (e.g. DEBUG_LEVEL)
+#------------------------------------------------------------------------------
+
+f_Load_SCU_Env
+RETURN_CODE=$?
+if [[ ${RETURN_CODE} -gt 0 ]]; then
+	echo "ERROR: Failed to initialize the SCU runtime environment!" >&2
+	exit 3
+fi
+
+#
+# Adjust DEBUG_LEVEL (set in SCU_env) if verbose option was specified
+#
+
+if "${OPTION_LOWER_V}"; then
+	DEBUG_LEVEL=${DEBUG_LEVEL_DETAIL}
+fi
+
+#
+# Print details of this process
+#
+
+if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+	. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Process_Info >&2 # source into
+	echo >&2
+fi
+
+#------------------------------------------------------------------------------
+# Perform main program
+#------------------------------------------------------------------------------
+
+#
+# Read SCU cycle number from file
+#
+
+if [[ ! -e "${SCU_CYCLE_FILE}" ]]; then
+	echo "Warning: Cycle number file ${SCU_CYCLE_FILE} does not exist!" >&2
+elif [[ ! -r "${SCU_CYCLE_FILE}" ]]; then
+	echo "Warning: Cycle number file ${SCU_CYCLE_FILE} can not be read!" >&2
+else
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "Reading SCU cycle number from ${SCU_CYCLE_FILE}" >&2
+	fi
+	SCU_CYCLE_NUMBER="$(awk -F "=" '$1=="SCU_CYCLE_NUMBER" \
+		{gsub("^[ \t]+|[ \t]+$", "", $2); print $2}' \
+		${SCU_CYCLE_FILE} 2>/dev/null)"
+	SCU_CYCLE_DATE="$(awk -F "=" '$1=="SCU_CYCLE_DATE" \
+		{gsub("^[ \t]+|[ \t]+$", "", $2); print $2}' \
+		${SCU_CYCLE_FILE} 2>/dev/null)"
+fi
+
+if [[ "${SCU_CYCLE_NUMBER}" -gt 0 ]]; then
+	echo "Read cycle number ${SCU_CYCLE_NUMBER} from ${SCU_CYCLE_FILE}." >&2
+else
+	SCU_CYCLE_NUMBER=0 # cycle number undefined, starting with 0
+	SCU_CYCLE_DATE="1970-01-01_00:00:00" # default to epoch if undefined
+	echo "Warning: Failed to read cycle number from ${SCU_CYCLE_FILE}!" >&2
+fi
+
+#
+# No parameter specified - just report current cycle number from file
+#
+
+if "${OPTION_NONE}"; then
+
+	echo "${SCU_CYCLE_NUMBER}"
+	MY_EXIT_RC=0
+
+fi
+
+#
+# Increment cycle number and update file
+#
+
+if "${OPTION_LOWER_I}"; then
+
+	NEW_CYCLE_NUMBER="$(echo ${SCU_CYCLE_NUMBER} | awk '{print $1+1}')"
+	NEW_CYCLE_DATE="${MY_START_TIME}"
+
+	# Increment SCU cycle number by one
+
+	echo "Incrementing SCU cycle number by one" \
+		"(${SCU_CYCLE_NUMBER}+1=${NEW_CYCLE_NUMBER})." >&2
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "Current cycle number: ${SCU_CYCLE_NUMBER} (${SCU_CYCLE_DATE})" >&2
+		echo "New SCU cycle number: ${NEW_CYCLE_NUMBER} (${NEW_CYCLE_DATE})" >&2
+	fi
+
+	# Create new cycle file
+
+	if [[ -f "${SCU_CYCLE_FILE}" ]]; then
+		cp -p "${SCU_CYCLE_FILE}" "${SCU_CYCLE_FILE}.OLD" 2>/dev/null
+	fi
+
+	f_SCU_cycle_number_cf_Header > "${SCU_CYCLE_FILE}"
+	echo >> "${SCU_CYCLE_FILE}"
+	echo "SCU_CYCLE_NUMBER=${NEW_CYCLE_NUMBER}" >> "${SCU_CYCLE_FILE}"
+	echo "SCU_CYCLE_DATE=${NEW_CYCLE_DATE}" >> "${SCU_CYCLE_FILE}"
+	echo >> "${SCU_CYCLE_FILE}"
+	f_Standard_file_Footer >>"${SCU_CYCLE_FILE}"
+
+	# Add entry to cycle change log file
+
+	if [[ -f "${SCU_HOME}/${F_CYCLE_INC_LOG_REL}" ]]; then
+		cp -p "${SCU_HOME}/${F_CYCLE_INC_LOG_REL}" \
+			"${SCU_HOME}/${F_CYCLE_INC_LOG_REL}.OLD" 2>/dev/null
+	else
+		f_SCU_cycle_increment_log_Header > "${SCU_HOME}/${F_CYCLE_INC_LOG_REL}"
+		echo >> "${SCU_HOME}/${F_CYCLE_INC_LOG_REL}"
+	fi
+
+	echo "${NEW_CYCLE_NUMBER} ${NEW_CYCLE_DATE}" \
+		>> "${SCU_HOME}/${F_CYCLE_INC_LOG_REL}"
+
+	SCU_CYCLE_NUMBER="${NEW_CYCLE_NUMBER}"
+	SCU_CYCLE_DATE="${NEW_CYCLE_DATE}"
+
+	echo "${SCU_CYCLE_NUMBER}"
+	MY_EXIT_RC=0
+
+fi
+
+#
+# Refresh cycle number from all available sources
+#
+
+if "${OPTION_LOWER_R}"; then
+
+## TODO ## Main: OPTION_LOWER_R: not implemented (Refresh cycle number from all available sources)
+
+	# Check SCU_cycle_number.cf + SCU_cycle_number.cf.OLD
+	# Check SCU_cycle_increment.log + SCU_cycle_increment.log.OLD
+	# Mount USB memory, check highest cycle number, unmount if unmounted before
+	# Adjust cycle number if needed (highest found +1)
+	# Update ${SCU_CYCLE_FILE} with new cycle number
+
+	echo "Refreshing cycle number" >&2
+	echo "Warning: Function not implemented!" >&2
+
+	MY_EXIT_RC=0
+
+fi
+
+exit ${MY_EXIT_RC}
+
+###############################################################################
+# EOF
+###############################################################################
+

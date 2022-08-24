@@ -1,0 +1,74 @@
+#!/bin/bash
+#
+# lib_SCU_base
+#
+# Library containing SCU related functions
+#
+# $REQUIRES VARIABLE SCU_HOME
+# $REQUIRES VARIABLE DEBUG_LEVEL
+# $REQUIRES FILE ${SCU_HOME}/etc/SCU_env
+# Exposes functions: ...
+# MUST NOT 'exit'!
+# f_SCU_Load_Env: Variable DEBUG_LEVEL unavailable yet!
+# Functions f_SCU_Load_Env and f_SCU_Process_Info must be sourced (".")!
+# Sourced functions must be unset in this library before return
+#
+
+F_ETC_SCU_ENV_FILE_REL="etc/SCU_env" # relative path of SCU environment file
+
+function f_SCU_Load_Env {
+
+	#
+	# f_SCU_Load_Env
+	#
+
+	if [[ ! -f "${SCU_HOME}/${F_ETC_SCU_ENV_FILE_REL}" ]]; then
+		echo "ERROR: Environment file ${SCU_HOME}/${F_ETC_SCU_ENV_FILE_REL}" \
+			"not found!" >&2
+	else
+		. "${SCU_HOME}/${F_ETC_SCU_ENV_FILE_REL}" # source in SCU_env file
+	fi
+
+}
+
+function f_SCU_Process_Info {
+
+	#
+	# f_SCU_Process_Info
+	#
+
+	PPID_NAME_ARGS="$(ps -p ${MY_PARENT_ID} -o args= 2>/dev/null)"
+
+	echo "${MY_BASE_NAME} started as $0"
+	if [[ ${MY_ARG_COUNT} -eq 0 ]]; then
+		 echo "Arguments (0):  <none>"
+	else
+		 echo "Arguments (${MY_ARG_COUNT}):  ${MY_ARG_LIST}"
+	fi
+	echo "Work directory: ${WORK_DIR_NAME}"
+	echo "Executed by:    $(id ${MY_EXEC_USER} | awk '{print $1" "$2}')"
+	echo "Script PID:     ${MY_PROCESS_ID}"
+	echo "Script PPID:    ${MY_PARENT_ID} (${PPID_NAME_ARGS})"
+	echo "Start time:     ${MY_START_TIME}"
+
+}
+
+#
+# Execute the function spcified as $1 with any arguments
+#
+
+if [[ "$1" == "f_SCU_Load_Env" || "$1" == "f_SCU_Process_Info" ]]; then
+	$@
+fi
+
+#
+# Disposition of (also sourced) functions
+#
+
+unset f_SCU_Load_Env
+unset f_SCU_Process_Info
+
+###############################################################################
+# EOF
+###############################################################################
+

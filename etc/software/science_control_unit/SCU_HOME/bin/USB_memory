@@ -1,0 +1,1194 @@
+#!/bin/bash
+###############################################################################
+#
+# USB_memory
+#
+# Powers, discovers, formats, mounts USB flash memory and reports status.
+# Also Synchronizes USB_A und USB_B and exports data to USB_X for downlink.
+#
+# Needs sudo (root) for executing parted, fuser, [u]mount, chmod, chown,
+#   tune2fs, ntfslabel, ntfsinfo - see ${CMD_PREFIX_SUDO}
+#
+# $LOCATION ${SCU_HOME}/bin
+#
+# $REQUIRES VARIABLE SCU_HOME
+# $REQUIRES LIBRARY ${SCU_HOME}/lib/lib_SCU_base
+# $REQUIRES LIBRARY ${SCU_HOME}/lib/lib_MCU_message
+# $REQUIRES DIRECTORY ${SCU_HOME}/USB_A
+# $REQUIRES DIRECTORY ${SCU_HOME}/USB_B
+# $REQUIRES DIRECTORY ${SCU_HOME}/USB_X
+# $REQUIRES PACKAGE ntfs-3g
+#
+# $RETURNS 0 success
+# $RETURNS 1 general error
+# $RETURNS 2 invalid option or argument
+# $RETURNS 3 failed to load environment
+# $RETURNS 4 invalid device name
+#
+# $COMPONENT_NAME MLU.SCU.USB_memory
+# $VERSION_NUMBER 0.5.1
+# $VERSION_DATE 2018-07-17_13:59:00
+#
+###############################################################################
+# set -x
+unalias -a
+
+#------------------------------------------------------------------------------
+# Define global environment variables
+#------------------------------------------------------------------------------
+
+MY_START_TIME="$(date +%Y-%m-%d_%H:%M:%S)" # current time early after start
+MY_DIR_NAME="$(dirname $0)" # directory where this script is located
+MY_FILE_NAME="$(basename $0)" # file name of this script (without path)
+MY_BASE_NAME="$(basename ${MY_FILE_NAME} .sh)" # script name without ".sh"
+MY_EXEC_USER="$(whoami 2>/dev/null)" # name of user who started this script
+MY_PROCESS_ID="$(ps -fp $$ -o pid= | awk '{print $1}')" # PID of this script
+MY_PARENT_ID="$(ps -fp $$ -o ppid= | awk '{print $1}')" # PID of parent process
+MY_ARG_COUNT="$#" # number of parameters passed to this script
+MY_ARG_LIST="$@" # list of all parameters passed to this script
+WORK_DIR_NAME="$(pwd)" # current work directory of shell starting this script
+typeset -i RETURN_CODE=0 # return code of previous command (0=success)
+typeset -i MY_EXIT_RC=1 # return code of this script (0=success)(default=1)
+typeset -i OPT_EXCLUSIVE_COUNT=0 # counter for mutually exclusive options
+typeset -i OPT_REQUIRED_COUNT=0 # counter for required options
+
+F_LIB_SCU_BASE_NAME="lib_SCU_base" # library lib_SCU_base
+F_LIB_SCU_BASE_REL="lib/${F_LIB_SCU_BASE_NAME}" # relative dir
+F_LIB_MCU_MESSAGE_NAME="lib_MCU_message" # library lib_MCU_message
+F_LIB_MCU_MESSAGE_REL="lib/${F_LIB_MCU_MESSAGE_NAME}" # relative dir
+
+#------------------------------------------------------------------------------
+# Function f_Print_Help
+# Shows the usage of this script.
+# Usage: f_Print_Help
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Print_Help {
+	echo "Usage: ${MY_FILE_NAME} -f <Device> -l {USB_A|USB_B|USB_X}[-v][-V][-h]"
+	echo "       ${MY_FILE_NAME} {-m|-u} {-a|USB_A|USB_B|USB_X}[-v][-V][-h]"
+	echo "       ${MY_FILE_NAME} {-p|-q} {-a|USB_A|USB_B|USB_X}[-v][-V][-h]"
+	echo "       ${MY_FILE_NAME} {-d|-r|-s|-x}[-v][-V][-h]"
+	echo "Powers, formats, mounts USB flash memory and reports status."
+	echo "Also Synchronizes USB_A und USB_B and exports data to USB_X."
+	echo
+	echo "  -a     applies to all USB memory (USB_A+USB_B+USB_X)"
+	echo "  -d     discover all powered on USB memory devices"
+	echo "  -f     format flash memory device (e.g. /dev/sda)"
+	echo "  -l     label of USB memory to format {USB_A|USB_B|USB_X}"
+	echo "  -m     mount flash memory {-a|USB_A|USB_B|USB_X}"
+	echo "  -p     power on flash memory {-a|USB_A|USB_B|USB_X}"
+	echo "  -q     power off flash memory {-a|USB_A|USB_B|USB_X}"
+	echo "  -r     report status of USB memory"
+	echo "  -s     synchronize flash memory USB_A with USB_B"
+	echo "  -u     unmount flash memory {-a|USB_A|USB_B|USB_X}"
+	echo "  -x     export data from USB_A/USB_B to USB_X"
+	echo "  -v     print verbose output"
+	echo "  -V     print version of this script"
+	echo "  -h     print this help message"
+	echo
+	echo "Example: ${MY_FILE_NAME} -m USB_X"
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Load_SCU_Env
+#
+# Loads the SCU environment with global variables and functions.
+# Usage: f_Load_SCU_Env
+# Returns: 0 success
+# Returns: 1 variable $SCU_HOME is undefined
+# Returns: 2 directory $SCU_HOME is invalid
+# Returns: 3 failed to load SCU environment
+#------------------------------------------------------------------------------
+
+function f_Load_SCU_Env {
+
+	if [[ -z "${SCU_HOME}" ]]; then
+
+		echo "ERROR: Variable SCU_HOME not defined in environment!" >&2
+		return 1
+
+	else
+
+		if [[ ! -e "${SCU_HOME}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: Directory SCU_HOME=${SCU_HOME} does not exist!" >&2
+			fi
+			return 2
+
+		elif [[ ! -e "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: SCU_HOME=${SCU_HOME} is not a valid SCU" \
+					"installation!" >&2
+			fi
+			return 2
+
+		else
+
+			if "${OPTION_LOWER_V}"; then
+				echo "Calling library function:" \
+					"${SCU_HOME}/${F_LIB_SCU_BASE_REL} f_SCU_Load_Env" >&2
+			fi
+
+			export SCU_HOME # export current SCU_HOME for calls to libraries
+			unset SCU_ENV_VERSION_NUMBER SCU_ENV_VERSION_DATE # clear variables
+			. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Load_Env # source SCU_env
+
+			if [[ -n "${SCU_ENV_VERSION_NUMBER}" && \
+					-n "${SCU_ENV_VERSION_DATE}" ]]; then
+
+				if "${OPTION_LOWER_V}"; then
+					echo "Successfully loaded SCU environment version:" \
+						"${SCU_ENV_VERSION_NUMBER} (${SCU_ENV_VERSION_DATE})" >&2
+					echo "Using SCU_HOME=${SCU_HOME}" >&2
+					echo >&2
+				fi
+				return 0
+
+			else
+
+				if "${OPTION_LOWER_V}"; then
+					echo "ERROR: Failed to load SCU environment in" \
+						"SCU_HOME=${SCU_HOME}!" >&2
+				fi
+				return 3
+
+			fi
+
+		fi
+
+	fi
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Discover_USB_Memory
+#
+# Display details of powered on USB memory devices.
+# Usage: f_Discover_USB_Memory [<DiskDevice>]
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Discover_USB_Memory {
+	REPORT_HEADER="#Device;Size[GB];Vendor;Model;Part1;Size[GB];Label"
+	REPORT_HEADER="${REPORT_HEADER};FileSystem;MountPoint"
+	echo "${REPORT_HEADER}"
+
+	if [[ -n "$1" ]]; then
+		DEV_FILE_LIST="$1"
+	else
+		DEV_FILE_LIST="/dev/sd*"
+	fi
+
+	ls ${DEV_FILE_LIST} 2>/dev/null | awk '$1 ~ /^\/dev\/sd[a-z]+$/ \
+			{print}' | sort | \
+			while read DEV_DISK_FILE; do
+
+		# Get details about the USB disk device
+		DEV_DISK_DATA=$(lsblk -abdilnp -o \
+			name,size,type,tran,hotplug,vendor,model \
+			${DEV_DISK_FILE} | awk '$3=="disk" && $4=="usb" && $5=="1" \
+			{printf("%s;%.f;%s;%s", $1, $2/1024/1024/1024, $6, $7); \
+			for(i=8;i<=NF;i++){printf("_%s", $i)}; printf("\n")}' | head -1)
+
+		# Get details about partition #1 only (/dev/sd[a-z]+1)
+		DEV_PART_DATA=$(ls ${DEV_DISK_FILE}1 | \
+			awk '$1 ~ /^\/dev\/sd[a-z]+[0-9]+$/ {print}' | sort | head -1 | \
+			while read DEV_PART_FILE; do
+				lsblk -abdilnp -o \
+				name,size,type,label,fstype,mountpoint \
+				${DEV_PART_FILE} | awk '$3=="part" \
+				{if($6==""){$6="N/A"}; \
+				printf("%s;%.f;%s;%s;%s\n", $1, $2/1024/1024/1024, $4, $5, $6)}'
+			done | head -1)
+
+		# Print CSV report of devices found
+		if [[ -z "${DEV_DISK_DATA}" ]]; then
+			DEV_DISK_DATA=";;;;"
+		fi
+		if [[ -z "${DEV_PART_DATA}" ]]; then
+			DEV_PART_DATA=";;;;"
+		fi
+		echo "${DEV_DISK_DATA};${DEV_PART_DATA}"
+	done
+
+	# Print additional information in verbose mode
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+
+		ls ${DEV_FILE_LIST} 2>/dev/null | awk \
+				'$1 ~ /^\/dev\/sd[a-z]+[0-9]+$/ {print}' | sort | \
+				while read DEV_DISK_FILE; do
+			DEV_BASE_NAME="$(basename ${DEV_DISK_FILE})"
+			USB_DISK_FS_TYPE="$(lsblk -abdiln -o fstype ${DEV_DISK_FILE} \
+				2>/dev/null)"
+			echo
+			if [[ "${USB_DISK_FS_TYPE}" = "ext4" ]]; then
+
+				sudo tune2fs -l "${DEV_DISK_FILE}" | awk -v \
+					DEV="${DEV_BASE_NAME}" -F ":" \
+					'$1 !~ /^tune2fs/ {gsub("[ \t]+","_", $1); $1=DEV"."$1; \
+					gsub("^[ \t]+","", $2); gsub("[ \t]+","_", $2); \
+					print $1"="$2}'
+
+			elif [[ "${USB_DISK_FS_TYPE}" = "ntfs" ]]; then
+
+				LC_ALL="C" sudo ntfslabel -fnv "${DEV_DISK_FILE}" 2>&1 | \
+					awk -v DEV="${DEV_BASE_NAME}" -F ":" \
+					'tolower($0) !~ /^forced to continue/ \
+					{gsub("[ \t]+$","", $1); gsub("[ \t]+","_", $1); \
+					$1=DEV"."$1; gsub("^[ \t]+","", $2); \
+					gsub("[ \t]+","_", $2); print $1"="$2}'
+				LC_ALL="C" sudo ntfsinfo -fmv "${DEV_DISK_FILE}" 2>&1 | \
+					awk -v DEV="${DEV_BASE_NAME}" -F ":" \
+					'tolower($0) !~ /^forced to continue/ \
+					{gsub("[ \t]+$","", $1); gsub("[ \t]+","_", $1); \
+					$1=DEV"."$1; gsub("^[ \t]+","", $2); \
+					gsub("[ \t]+","_", $2); print $1"="$2}'
+
+			fi
+		done
+	fi
+}
+
+#------------------------------------------------------------------------------
+# Function f_Format_USB_Device
+# Create partition #1 with file system on USB memory device.
+# Usage: f_Format_USB_Device <DiskDevice> {USB_A|USB_B|USB_X} <FSType>
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Format_USB_Device {
+
+## TODO ## f_Format_USB_Device: Verify ${OPTION_LOWER_F_ARG} is block device (exclude /dev/sda1)
+## TODO ## f_Format_USB_Device: lsblk -abdilnp -o name,size,type,tran,hotplug,vendor,model /dev/sda
+## TODO ## f_Format_USB_Device: Check sudo (root) for -f (at prerequisite check)
+## TODO ## f_Format_USB_Device: Prerequisites: sudo apt-get -q -y install ntfs-3g
+## TODO ## f_Format_USB_Device: Add/Modify unique entry in /etc/fstab
+
+	USB_DISK_DEV="$1"
+	USB_DISK_LABEL="$2"
+	USB_DISK_FS_TYPE="$3"
+
+	case ${USB_DISK_LABEL} in
+		USB_A|USB_B)
+			USB_DISK_FS_TYPE="ext4"
+			;;
+		USB_X)
+			USB_DISK_FS_TYPE="ntfs"
+			;;
+	esac
+
+	echo "Formatting ${USB_DISK_DEV} as ${USB_DISK_LABEL}" \
+		"(${USB_DISK_FS_TYPE})"
+
+## TODO ## f_Format_USB_Device: Existing duplicate device labels cause problems
+
+	ls ${USB_DISK_DEV}?* 2>/dev/null | while read USB_DEV; do
+
+		PART_NUMBER="$(echo ${USB_DEV} | awk '{gsub("^[^0-9]", ""); print}')"
+
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo
+			echo "Deleting ${USB_DISK_DEV} Partition ${PART_NUMBER} (${USB_DEV})"
+		fi
+
+		mount 2>/dev/null | egrep "^${USB_DEV}" >/dev/null
+		RETURN_CODE=$?
+		if [[ "${RETURN_CODE}" -eq 0 ]]; then
+
+			#
+			# Free and unmount file system blocking device initialization
+			#
+
+			FILE_SYSTEM="$(mount 2>/dev/null | awk -v USB_DEV="${USB_DEV}" \
+				'$1==USB_DEV {print $3}')"
+
+			if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+				echo
+				echo "Killing processes on file system ${FILE_SYSTEM}" \
+					"(${USB_DEV})"
+				if sudo fuser -m "${USB_DEV}" >/dev/null 2>&1; then
+					ps -fp $(sudo fuser -m "${USB_DEV}" 2>/dev/null | \
+						awk '{gsub("[^0-9 ]", ""); gsub("[ \t\r\n]+"," "); \
+						print}' || "0")
+				else
+					echo "No processes active on file system ${FILE_SYSTEM}" \
+						"(${USB_DEV})"
+				fi
+			fi
+			# kill all processes on file system (use device not mount point!)
+			sudo fuser -km "${USB_DEV}" >/dev/null 2>&1
+
+			if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+				echo
+				echo "Unmounting file system ${FILE_SYSTEM} (${USB_DEV})"
+				# unmount file systems on device (use device not mount point!)
+				sudo umount -v "${USB_DEV}"
+			else
+				sudo umount "${USB_DEV}" # same less verbose
+			fi
+		fi
+
+		#
+		# Delete current partition
+		#
+
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo
+			echo "Removing partition ${PART_NUMBER} (${USB_DEV})"
+			sudo parted ${USB_DISK_DEV} -s print | \
+				awk '$1=="Number" || $1~/^[0-9]+$/ {print}'
+		fi
+		sudo parted "${USB_DISK_DEV}" -s rm ${PART_NUMBER} # delete partition
+	done
+
+	mount 2>/dev/null | egrep "^${USB_DISK_DEV}" >/dev/null
+	RETURN_CODE=$?
+	if [[ "${RETURN_CODE}" -eq 0 ]]; then
+
+		FILE_SYSTEM="$(mount 2>/dev/null | awk -v USB_DEV="${USB_DEV}" \
+			'$1==USB_DEV {print $3}')"
+
+		echo "Warning: Failed to unmount file system ${FILE_SYSTEM}!" >&2
+	fi
+
+	#
+	# Create new partition table on empty device
+	#
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo
+		echo "Creating new partition table on ${USB_DISK_DEV}"
+	fi
+	sudo parted ${USB_DISK_DEV} -s mklabel msdos # create new partition table
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		sudo parted ${USB_DISK_DEV} -s print 2>&1 | awk \
+			'$0 !~ /^[ \t]*$/ {print}'
+	fi
+
+	#
+	# Create new partition 1 and file system (100% of device)
+	#
+
+	if [[ "${USB_DISK_FS_TYPE}" = "ext4" ]]; then
+
+		MK_PARTITION_CMD="parted ${USB_DISK_DEV} -s unit % mkpart primary"
+		MK_PARTITION_CMD="${MK_PARTITION_CMD} ext4 0 100"
+
+		MK_FILESYSTEM_CMD="mkfs -L ${USB_DISK_LABEL} -t ${USB_DISK_FS_TYPE} -F"
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} -v" # verbose
+		else
+			MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} -q" # quiet
+		fi
+		MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} -e continue"
+		MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} -M ${SCU_HOME}/${USB_DISK_LABEL}"
+		MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} ${USB_DISK_DEV}1"
+
+	elif [[ "${USB_DISK_FS_TYPE}" = "ntfs" ]]; then
+
+		MK_PARTITION_CMD="parted ${USB_DISK_DEV} -s unit % mkpart primary"
+		MK_PARTITION_CMD="${MK_PARTITION_CMD} ntfs 0 100"
+
+		MK_FILESYSTEM_CMD="mkntfs -L ${USB_DISK_LABEL} -f -I -F"
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} -v" # verbose
+		else
+			MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} -q" # quiet
+		fi
+		MK_FILESYSTEM_CMD="${MK_FILESYSTEM_CMD} ${USB_DISK_DEV}1"
+
+	fi
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo
+		echo "Creating new partition 1 (${USB_DISK_DEV}1)"
+	fi
+	sudo ${MK_PARTITION_CMD}
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		sudo parted ${USB_DISK_DEV} -s print 2>&1 | awk \
+			'( $1 == "Number" ||  $1 ~ /^[0-9]+$/ ) && $0 !~ /^[ \t]*$/ {print}'
+	fi
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo
+		echo "Creating new file system ${SCU_HOME}/${USB_DISK_LABEL}" \
+			"(${USB_DISK_FS_TYPE})"
+	fi
+	LC_ALL="C" sudo ${MK_FILESYSTEM_CMD} | awk '! /^[ \t\r\n]*$/ {print}'
+	sleep 2 # wait till block device is updated
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo
+		lsblk -f "${USB_DISK_DEV}1"
+	fi
+
+	#
+	# Create mount point for file system and perform mount
+	#
+
+	if [[ ! -e "${SCU_HOME}/${USB_DISK_LABEL}" ]]; then
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo
+			echo "Creating mount point ${SCU_HOME}/${USB_DISK_LABEL}"
+		fi
+		mkdir "${SCU_HOME}/${USB_DISK_LABEL}" # create mount point
+	fi
+
+	sudo mount "${USB_DISK_DEV}1" "${SCU_HOME}/${USB_DISK_LABEL}"
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo
+		df -h "${SCU_HOME}/${USB_DISK_LABEL}"
+	fi
+
+	sudo chmod "0775" "${SCU_HOME}/${USB_DISK_LABEL}"
+	sudo chown "${SCU_USER_UID}:${SCU_USER_GID}" "${SCU_HOME}/${USB_DISK_LABEL}"
+	echo "${USB_DISK_LABEL}" >"${SCU_HOME}/${USB_DISK_LABEL}/LABEL.ID"
+	sudo chmod "0664" "${SCU_HOME}/${USB_DISK_LABEL}/LABEL.ID"
+	sudo chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+		"${SCU_HOME}/${USB_DISK_LABEL}/LABEL.ID"
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo
+		echo "Mount point of file system:"
+		ls -ld "${SCU_HOME}/${USB_DISK_LABEL}"
+	fi
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo
+		if [[ "${USB_DISK_FS_TYPE}" = "ext4" ]]; then
+			sudo tune2fs -l "${USB_DISK_DEV}1"
+		elif [[ "${USB_DISK_FS_TYPE}" = "ntfs" ]]; then
+			LC_ALL="C" sudo ntfslabel -fnv "${USB_DISK_DEV}1" 2>&1 | \
+				grep -iv "Forced to continue"
+			echo
+			LC_ALL="C" sudo ntfsinfo -fmv "${USB_DISK_DEV}1" 2>&1 | \
+				grep -iv "Forced to continue"
+		fi
+	fi
+
+	echo
+	echo "File system created and mounted:"
+	mount | grep "${SCU_HOME}/${USB_DISK_LABEL}"
+
+}
+
+#------------------------------------------------------------------------------
+# Function f_Mount_USB_Device
+# Mounts USB file system on memory device by file system label.
+# Usage: f_Mount_USB_Device {USB_A|USB_B|USB_X}
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Mount_USB_Device {
+
+	USB_DISK_LABEL="$1"
+
+	echo "Mounting file system labeled ${USB_DISK_LABEL}"
+	USB_DISK_DEV="$(lsblk -abdilnp -o label,name /dev/sd?1 | \
+		awk -v LABEL="${USB_DISK_LABEL}" '$1==LABEL {print $2}' | head -1)"
+
+## TODO ## f_Unmount_USB_Device: Check if device + file system exist, powered on, already mounted
+## TODO ## f_Mount_USB_Device: Report error for unassigned labels, try to guess correct one
+## TODO ## f_Mount_USB_Device: Check mount successful
+
+	if [[ ! -e "${USB_DISK_DEV}" ]]; then
+
+		echo "ERROR: Device ${USB_DISK_DEV} does not exist!" >&2
+		return 1
+
+	else
+
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo
+			echo "Mounting ${USB_DISK_DEV} as ${SCU_HOME}/${USB_DISK_LABEL}"
+			sudo mount -v "${USB_DISK_DEV}" "${SCU_HOME}/${USB_DISK_LABEL}"
+		else
+			sudo mount "${USB_DISK_DEV}" "${SCU_HOME}/${USB_DISK_LABEL}"
+		fi
+		return 0
+
+	fi
+
+}
+
+#------------------------------------------------------------------------------
+# Function f_Unmount_USB_Device
+# Unmounts USB file system by file system label.
+# Usage: f_Unmount_USB_Device {USB_A|USB_B|USB_X}
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Unmount_USB_Device {
+
+	USB_DISK_LABEL="$1"
+
+	echo "Unmounting file system labeled ${USB_DISK_LABEL}"
+	USB_DISK_DEV="$(lsblk -abdilnp -o label,name /dev/sd?1 | \
+		awk -v LABEL="${USB_DISK_LABEL}" '$1==LABEL {print $2}' | head -1)"
+
+## TODO ## f_Unmount_USB_Device: Check if device + file system exist, powered on, already mounted
+## TODO ## f_Unmount_USB_Device: Report error for unassigned labels, try to guess correct one
+## TODO ## f_Unmount_USB_Device: Check fuser / umount successful
+
+	mount 2>/dev/null | egrep "^${USB_DISK_DEV}" >/dev/null
+	RETURN_CODE=$?
+	if [[ "${RETURN_CODE}" -ne 0 ]]; then
+
+		echo "ERROR: Filesystem ${USB_DISK_LABEL} is not mounted!" >&2
+		return 1
+
+	else
+
+		FILE_SYSTEM="$(mount 2>/dev/null | awk -v \
+			USB_DISK_DEV="${USB_DISK_DEV}" '$1==USB_DISK_DEV {print $3}')"
+
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo
+			echo "Killing processes on file system ${FILE_SYSTEM}" \
+				"(${USB_DISK_DEV})"
+			if sudo fuser -m "${USB_DISK_DEV}" >/dev/null 2>&1; then
+				ps -fp $(sudo fuser -m "${USB_DISK_DEV}" 2>/dev/null | \
+					awk '{gsub("[^0-9 ]", ""); gsub("[ \t\r\n]+"," "); \
+					print}' || "0")
+			else
+				echo "No processes active on file system ${FILE_SYSTEM}" \
+					"(${USB_DISK_DEV})"
+			fi
+		fi
+		# kill all processes on file system (use device not mount point!)
+		sudo fuser -km "${USB_DISK_DEV}" >/dev/null 2>&1
+
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo
+			echo "Unmounting file system ${FILE_SYSTEM} (${USB_DISK_DEV})"
+			# unmount file systems on device (use device not mount point!)
+			sudo umount -v "${USB_DISK_DEV}"
+		else
+			sudo umount "${USB_DISK_DEV}" # same less verbose
+		fi
+
+	fi
+
+}
+
+#------------------------------------------------------------------------------
+# Parse command line parameters
+#------------------------------------------------------------------------------
+
+GETOPTS_OPTSTRING=":df:l:m:p:q:rsu:xvVh"
+
+OPTION_LOWER_D=false
+OPTION_LOWER_F=false
+OPTION_LOWER_L=false
+OPTION_LOWER_M=false
+OPTION_LOWER_P=false
+OPTION_LOWER_Q=false
+OPTION_LOWER_R=false
+OPTION_LOWER_S=false
+OPTION_LOWER_U=false
+OPTION_LOWER_X=false
+OPTION_LOWER_V=false
+OPTION_UPPER_V=false
+OPTION_LOWER_H=false
+OPTION_LOWER_F_ARG=""
+OPTION_LOWER_L_ARG=""
+OPTION_LOWER_MU_ARG=""
+OPTION_LOWER_PQ_ARG=""
+
+#
+# Print help (-h|-?) and version (-V) on priority
+# (will not work if given as an argument to an option requiring arguments)
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts ${GETOPTS_OPTSTRING} CMD_OPTION; do
+	case ${CMD_OPTION} in
+		v)
+			OPTION_LOWER_V=true
+			;;
+		V)
+			OPTION_UPPER_V=true
+			;;
+		h)
+			OPTION_LOWER_H=true
+			;;
+		\?)
+			if [[ "${OPTARG}" = "?" ]]; then
+				OPTION_LOWER_H=true
+			fi
+			;;
+	esac
+done
+
+if "${OPTION_LOWER_H}"; then
+	f_Print_Help
+	exit 0
+fi
+
+if "${OPTION_UPPER_V}"; then
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	if [[ -n "${MY_VERSION_NUMBER}" && -n "${MY_VERSION_DATE}" ]]; then
+		echo "${MY_BASE_NAME} version ${MY_VERSION_NUMBER}" \
+			"(${MY_VERSION_DATE})"
+		exit 0
+	else
+		echo "ERROR: Can not find version information" \
+			"for ${MY_BASE_NAME}!" >&2
+		exit 1
+	fi
+fi
+
+#
+# Parse remaining command line options and arguments
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts ${GETOPTS_OPTSTRING} CMD_OPTION; do
+	case ${CMD_OPTION} in
+		d)
+			OPTION_LOWER_D=true
+			;;
+		f)
+			OPTION_LOWER_F=true
+			OPTION_LOWER_F_ARG="${OPTARG}"
+			;;
+		l)
+			OPTION_LOWER_L=true
+			OPTION_LOWER_L_ARG="${OPTARG}"
+			;;
+		m)
+			OPTION_LOWER_M=true
+			OPTION_LOWER_MU_ARG="${OPTARG}"
+			;;
+		p)
+			OPTION_LOWER_P=true
+			OPTION_LOWER_PQ_ARG="${OPTARG}"
+			;;
+		q)
+			OPTION_LOWER_Q=true
+			OPTION_LOWER_PQ_ARG="${OPTARG}"
+			;;
+		r)
+			OPTION_LOWER_R=true
+			;;
+		s)
+			OPTION_LOWER_S=true
+			;;
+		u)
+			OPTION_LOWER_U=true
+			OPTION_LOWER_MU_ARG="${OPTARG}"
+			;;
+		x)
+			OPTION_LOWER_X=true
+			;;
+		\?)
+			echo "ERROR: Invalid option -${OPTARG} specified!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+		:)
+			echo "ERROR: Option -${OPTARG} requires an argument!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+	esac
+done
+
+#
+# Parse trailing positional parameters
+# ($OPTIND, $OPTIND+1, $OPTIND+2, ...)
+#
+
+POS_PARAM1="${@:$OPTIND:1}"
+if [[ -n "${POS_PARAM1}" ]]; then
+	echo "ERROR: Parameter ${POS_PARAM1} not expected!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify mutual exclusive parameters
+#
+
+"${OPTION_LOWER_D}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_F}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_M}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_P}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_Q}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_R}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_S}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_U}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_X}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+if [[ "${OPT_EXCLUSIVE_COUNT}" -gt 1 ]]; then
+	echo "ERROR: Options {-d|-f|-m|-p|-q|-r|-s|-u|-x} are mutually" \
+		"exclusive!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify required parameters are present
+#
+
+"${OPTION_LOWER_D}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_F}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_M}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_P}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_Q}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_R}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_S}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_U}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_X}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+if [[ "${OPT_REQUIRED_COUNT}" -le 0 ]]; then
+	echo "ERROR: Required option {-d|-f|-m|-p|-q|-r|-s|-u|-x} missing!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify dependent parameters are present and in range
+#
+
+if "${OPTION_LOWER_F}" && ! "${OPTION_LOWER_L}"; then
+	echo "ERROR: Option -f requires option -l!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+if "${OPTION_LOWER_L}" && \
+		[[ ! ("${OPTION_LOWER_L_ARG}" = "USB_A" || \
+		"${OPTION_LOWER_L_ARG}" = "USB_B" || \
+		"${OPTION_LOWER_L_ARG}" = "USB_X") ]]; then
+	echo "ERROR: Argument to -l must be {USB_A|USB_B|USB_X}!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+if ("${OPTION_LOWER_M}" || "${OPTION_LOWER_U}") && \
+		[[ ! ("${OPTION_LOWER_MU_ARG}" = "-a" || \
+		"${OPTION_LOWER_MU_ARG}" = "a" || \
+		"${OPTION_LOWER_MU_ARG}" = "USB_A" || \
+		"${OPTION_LOWER_MU_ARG}" = "USB_B" || \
+		"${OPTION_LOWER_MU_ARG}" = "USB_X") ]]; then
+	echo "ERROR: Argument to {-m|-u} must be {-a|USB_A|USB_B|USB_X}!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+if ("${OPTION_LOWER_P}" || "${OPTION_LOWER_Q}") && \
+		[[ ! ("${OPTION_LOWER_PQ_ARG}" = "-a" || \
+		"${OPTION_LOWER_PQ_ARG}" = "a" || \
+		"${OPTION_LOWER_PQ_ARG}" = "USB_A" || \
+		"${OPTION_LOWER_PQ_ARG}" = "USB_B" || \
+		"${OPTION_LOWER_PQ_ARG}" = "USB_X") ]]; then
+	echo "ERROR: Argument to {-p|-q} must be {-a|USB_A|USB_B|USB_X}!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#------------------------------------------------------------------------------
+# Load SCU environment with global variables (e.g. DEBUG_LEVEL)
+#------------------------------------------------------------------------------
+
+f_Load_SCU_Env
+RETURN_CODE=$?
+if [[ "${RETURN_CODE}" -gt 0 ]]; then
+	echo "ERROR: Failed to initialize the runtime environment!" >&2
+	exit 3
+fi
+
+if "${OPTION_LOWER_V}"; then
+	DEBUG_LEVEL=${DEBUG_LEVEL_DETAIL}
+fi
+
+#------------------------------------------------------------------------------
+# Print details of this process
+#------------------------------------------------------------------------------
+
+if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+	PPID_NAME_ARGS="$(ps -p ${MY_PARENT_ID} -o args= 2>/dev/null)"
+	echo "${MY_BASE_NAME} started as $0" >&2
+	if [[ $# -eq 0 ]]; then
+		 echo "Arguments (0):  <none>" >&2
+	else
+		 echo "Arguments ($#):  $@" >&2
+	fi
+	echo "Work directory: ${WORK_DIR_NAME}" >&2
+	echo "Executed by:    $(id | awk '{print $1" "$2}')" >&2
+	echo "Script PID:     ${MY_PROCESS_ID}" >&2
+	echo "Script PPID:    ${MY_PARENT_ID} (${PPID_NAME_ARGS})" >&2
+	echo "Start time:     ${MY_START_TIME}" >&2
+	echo >&2
+fi
+
+#------------------------------------------------------------------------------
+# Perform main program
+#------------------------------------------------------------------------------
+
+## TODO ## Main: Unify variable names via lookup table (USB_DISK_DEV, ...)
+
+#
+# Discover all powered on USB memory devices
+#
+
+if "${OPTION_LOWER_D}"; then
+	f_Discover_USB_Memory
+fi
+
+#
+# Format flash memory device (e.g. /dev/sda)
+#
+
+if "${OPTION_LOWER_F}"; then
+	USB_DISK_DEV="${OPTION_LOWER_F_ARG}"
+	USB_DISK_LABEL="${OPTION_LOWER_L_ARG}"
+
+	if [[ ! -e "${USB_DISK_DEV}" ]]; then
+		echo "ERROR: Device ${USB_DISK_DEV} does not exist!" >&2
+		exit 4
+	fi
+
+	DEV_FILE=$(echo "${USB_DISK_DEV}" | awk '{gsub("[0-9]+$", ""); print}')
+	if [[ "${USB_DISK_DEV}" != "${DEV_FILE}" ]]; then
+		echo "ERROR: Device ${USB_DISK_DEV} is not a USB flash memory!" >&2
+		echo -e "\tTry ${DEV_FILE} instead?"
+		exit 4
+	fi
+
+	case ${USB_DISK_LABEL} in
+		USB_A|USB_B)
+			f_Format_USB_Device "${USB_DISK_DEV}" "${USB_DISK_LABEL}" "ext4"
+			;;
+		USB_X)
+			f_Format_USB_Device "${USB_DISK_DEV}" "${USB_DISK_LABEL}" "ntfs"
+			;;
+	esac
+fi
+
+#
+# Mount flash memory {-a|USB_A|USB_B|USB_X}
+#
+
+if "${OPTION_LOWER_M}"; then
+	USB_DISK_LABEL="${OPTION_LOWER_MU_ARG}"
+
+	case ${USB_DISK_LABEL} in
+		USB_A|USB_B|USB_X)
+			f_Mount_USB_Device "${USB_DISK_LABEL}"
+			;;
+		-a|a)
+			for USB_DEV in USB_A USB_B USB_X; do
+				f_Mount_USB_Device "${USB_DEV}"
+			done
+			;;
+	esac
+fi
+
+#
+# Unmount flash memory {-a|USB_A|USB_B|USB_X}
+#
+
+if "${OPTION_LOWER_U}"; then
+	USB_DISK_LABEL="${OPTION_LOWER_MU_ARG}"
+
+	case ${USB_DISK_LABEL} in
+		USB_A|USB_B|USB_X)
+			f_Unmount_USB_Device "${USB_DISK_LABEL}"
+			;;
+		-a|a)
+			for USB_DEV in USB_A USB_B USB_X; do
+				f_Unmount_USB_Device "${USB_DEV}"
+			done
+			;;
+	esac
+fi
+
+#
+# Power on flash memory {-a|USB_A|USB_B|USB_X}
+#
+
+if "${OPTION_LOWER_P}"; then
+	USB_DISK_LABEL="${OPTION_LOWER_PQ_ARG}"
+
+	case ${USB_DISK_LABEL} in
+		USB_A|USB_B|USB_X)
+			echo "Powering on flash memory ${USB_DISK_LABEL}"
+			echo
+			"${SCU_HOME}/${F_LIB_MCU_MESSAGE_REL}" \
+				f_MCU_send "${USB_DISK_LABEL}_Power" On
+			;;
+		-a|a)
+			for USB_DEV in USB_A USB_B USB_X; do
+				echo "Powering on flash memory ${USB_DEV}"
+				"${SCU_HOME}/${F_LIB_MCU_MESSAGE_REL}" \
+					f_MCU_send "${USB_DEV}_Power" On
+			done
+			;;
+	esac
+fi
+
+#
+# Power off flash memory {-a|USB_A|USB_B|USB_X}
+#
+
+if "${OPTION_LOWER_Q}"; then
+	USB_DISK_LABEL="${OPTION_LOWER_PQ_ARG}"
+
+	case ${USB_DISK_LABEL} in
+		USB_A|USB_B|USB_X)
+			echo "Powering off flash memory ${USB_DISK_LABEL}"
+			echo
+			"${SCU_HOME}/${F_LIB_MCU_MESSAGE_REL}" \
+				f_MCU_send "${USB_DISK_LABEL}_Power" Off
+			;;
+		-a|a)
+			for USB_DEV in USB_A USB_B USB_X; do
+				echo "Powering off flash memory ${USB_DEV}"
+				"${SCU_HOME}/${F_LIB_MCU_MESSAGE_REL}" \
+					f_MCU_send "${USB_DEV}_Power" Off
+			done
+			;;
+	esac
+fi
+
+
+
+## TODO ## Main: OPTION_LOWER_R: not implemented (Report status of USB memory)
+## TODO ## Main: OPTION_LOWER_R: known devices | -d = all devices
+## TODO ## Main: OPTION_LOWER_S: not implemented (Synchronize flash memory USB_A with USB_B)
+## TODO ## Main: OPTION_LOWER_X: not implemented (Export data from USB_A/USB_B to USB_X)
+
+exit
+
+###############################################################################
+#
+# Mount_USB_Stick
+#
+#
+# Mounts a USB stick file system
+#
+# Usage: Mount_USB_Stick USB_stick
+#
+# Parameters:
+#   $1 (USB_Stick) = {"USB_A"|"USB_B"|"USB_X"}
+#
+# Requires files/binaries:
+#   <none>
+#
+# Requires gloval variables:
+#   {$USB_A_PATH|$USB_B_PATH|$USB_X_PATH}
+#   {$USB_A_UUID|$USB_B_UUID|$USB_X_UUID}
+#   {$USB_A_SIZE|$USB_B_SIZE|$USB_X_SIZE}
+#   {$USB_A_FILESYSTEM|$USB_B_FILESYSTEM|$USB_X_FILESYSTEM}
+#   {$USB_A_DEV|$USB_B_DEV|$USB_X_DEV}
+#   {$USB_A_STATUS|$USB_B_STATUS|$USB_X_STATUS}
+#
+# Returns:
+#   {true|false}
+#
+# Mounts the USB stick passed as parameter $1 as $EXCISS_HOME/USB_?
+# Error recovery assumes partition 1 on USB stick as default file system
+#
+###############################################################################
+
+USB_STICK="$1" # {"USB_A"|"USB_B"|"USB_X"}
+
+case "${USB_STICK}" in
+	"USB_A")
+		USB_STICK_PATH="${USB_A_PATH}"
+		USB_STICK_UUID="${USB_A_UUID}"
+		USB_STICK_SIZE="${USB_A_SIZE}"
+		USB_STICK_FILESYSTEM="${USB_A_FILESYSTEM}"
+		;;
+	"USB_B")
+		USB_STICK_PATH="${USB_B_PATH}"
+		USB_STICK_UUID="${USB_B_UUID}"
+		USB_STICK_SIZE="${USB_B_SIZE}"
+		USB_STICK_FILESYSTEM="${USB_B_FILESYSTEM}"
+		;;
+	"USB_X")
+		USB_STICK_PATH="${USB_X_PATH}"
+		USB_STICK_UUID="${USB_X_UUID}"
+		USB_STICK_SIZE="${USB_X_SIZE}"
+		USB_STICK_FILESYSTEM="${USB_X_FILESYSTEM}"
+		;;
+	*)
+		echo "ERROR: Function $0 requires a parameter" >>${LOG_FILE}
+		echo "	Usage: Mount_USB_Stick" \
+			"{\"USB_A\"|\"USB_B\"|\"USB_X\"}" >>${LOG_FILE}
+		exit 1
+		;;
+esac
+
+echo | tee -a ${LOG_FILE} >&2
+echo "Verifying ${USB_STICK} file system" >>${LOG_FILE}
+
+echo >>${LOG_FILE}
+USB_STICK_DEV=""
+if [[ -n "${USB_STICK_UUID}" ]]; then
+	# Find USB stick by UUID from exciss_env
+	if [[ -f "/dev/disk/by-uuid/${USB_STICK_UUID}" ]]; then
+		USB_STICK_DEV="/dev/$(basename $(ls -l \
+			/dev/disk/by-uuid/${USB_STICK_UUID} | awk '{print $NF}' \
+			2>>${LOG_FILE}) 2>>${LOG_FILE})" >>${LOG_FILE} 2>&1
+	fi
+fi
+if [[ -n "${USB_STICK_DEV}" && -b "${USB_STICK_DEV}" ]]; then
+	echo "${USB_STICK}: ${USB_STICK_DEV} assigned to ${USB_STICK_UUID}" \
+		| tee -a ${LOG_FILE} >&2
+else
+	echo "ERROR - ${USB_STICK} device UUID=${USB_STICK_UUID} not found" | \
+		tee -a ${LOG_FILE} >&2
+	# Try to identify USB stick by size (partition=1)
+	echo "Searching for storage device with matching size" >>${LOG_FILE}
+	# Only partition 1 of USB stick is evaluated by awk (...print $2"1 ...)
+	USB_STICK_DEV=$(sudo fdisk -l 2>/dev/null | awk -v \
+		USB_SIZE=${USB_STICK_SIZE} '$1 == "Disk" && $2 !~ /mmcblk/ && \
+		$4 ~ /^GiB[,]+$/ && $3>(USB_SIZE*0.85) && $3<(USB_SIZE*1.15) \
+		{gsub(":$", "", $2); \
+		print $2"1 ("USB_SIZE*0.85"GB<"$3"GB<"USB_SIZE*1.15"GB)"}' | sort | \
+		while read USB_DEV_TEST USB_SIZE_TEST REST; do
+			DEV_IN_USE=0
+			for DEV_MOUNTED in $(mount | awk '{print $1}'); do
+				if [[ ${USB_DEV_TEST} == ${DEV_MOUNTED} ]]; then
+					DEV_IN_USE=1
+				fi
+			done
+			if [[ ${DEV_IN_USE} -eq 0 && -z ${DEV_AVAILABLE} ]]; then
+				echo "Available ${USB_DEV_TEST} ${USB_SIZE_TEST}" >>${LOG_FILE}
+				echo "${USB_DEV_TEST}"
+				break
+			fi
+		done | head -1)
+
+	if [[ -n "${USB_STICK_DEV}" ]]; then
+		echo "${USB_STICK}: ${USB_STICK_DEV} assumed by size" \
+			"(${USB_STICK_SIZE}GB)" | tee -a ${LOG_FILE}
+	else
+		echo "ERROR - ${USB_STICK} not found by size (${USB_STICK_SIZE}GB)" | \
+			tee -a ${LOG_FILE} >&2
+		# Try to find first matching entry in /etc/fstab
+		echo "Searching for storage device in ${FSTAB_FILE}" >>${LOG_FILE}
+		USB_STICK_DEV="$(awk -v DIR="${USB_STICK_PATH}" '$2==DIR {print $1}' \
+			${FSTAB_FILE} | head -1)" >>${LOG_FILE} 2>&1
+		if [[ -n "${USB_STICK_DEV}" && -e "${USB_STICK_DEV}" ]]; then
+			echo "${USB_STICK}: ${USB_STICK_DEV} found in ${FSTAB_FILE}" | \
+				tee -a ${LOG_FILE}
+		else
+			echo "ERROR - ${USB_STICK} not found in ${FSTAB_FILE}" | \
+				tee -a ${LOG_FILE} >&2
+		fi
+	fi
+fi
+
+if [[ $(df 2>/dev/null | awk -v DIR="${USB_STICK_PATH}" \
+	'$NF==DIR {print $NF}' | head -1) == "${USB_STICK_PATH}" ]]; then
+	sudo chown "${EXCISS_UID}:${EXCISS_GID}" ${USB_STICK_PATH} \
+		>>${LOG_FILE} 2>&1
+	echo "${USB_STICK} is already mounted on ${USB_STICK_PATH}" >>${LOG_FILE}
+	USB_STICK_STATUS="mounted"
+else
+	echo "${USB_STICK} currently not mounted on ${USB_STICK_PATH}" \
+		>>${LOG_FILE}
+	if [[ "${USB_STICK_FILESYSTEM}" == "vfat" ]]; then
+		sudo mount -t ${USB_STICK_FILESYSTEM} \
+			-o "rw,defaults,suid,dev,exec,relatime,noatime,owner,user,users" \
+			-o "nofail,noauto" \
+			-o "uid=$(id -u ${EXCISS_UID}),gid=$(id	-g ${EXCISS_GID})" \
+			${USB_STICK_DEV} ${USB_STICK_PATH} \
+			>>${LOG_FILE} 2>&1
+	elif [[ "${USB_STICK_FILESYSTEM}" == "ext4" ]]; then
+		sudo mount -t ${USB_STICK_FILESYSTEM} \
+			-o "rw,defaults,suid,dev,exec,relatime,noatime,owner,user,users" \
+			-o "nofail,noauto,data=journal,nodelalloc" \
+			${USB_STICK_DEV} ${USB_STICK_PATH} \
+			>>${LOG_FILE} 2>&1
+	else
+		sudo mount -t ${USB_STICK_FILESYSTEM} -o \
+			"rw,defaults,noatime" ${USB_STICK_DEV} ${USB_STICK_PATH} \
+			>>${LOG_FILE} 2>&1
+	fi
+	if [[ $(df 2>/dev/null | awk -v DIR="${USB_STICK_PATH}" \
+		'$NF==DIR {print $NF}' | head -1) == "${USB_STICK_PATH}" ]]; then
+		sudo chown "${EXCISS_UID}:${EXCISS_GID}" ${USB_STICK_PATH} \
+			>>${LOG_FILE} 2>&1
+		echo "${USB_STICK} was mounted on ${USB_STICK_PATH}" >>${LOG_FILE}
+		USB_STICK_STATUS="mounted"
+	else
+		echo "ERROR - Failed to mount ${USB_STICK} on ${USB_STICK_PATH}" \
+			>>${LOG_FILE} >&2
+		USB_STICK_STATUS="notmounted"
+	fi
+fi
+
+if [[ "${USB_STICK_STATUS}" == "mounted" ]]; then
+	if [[ -w "${USB_STICK_PATH}" ]]; then
+		TEST_FILE_NAME=".$(date +${LOG_DATE_FORMAT}).dirtest.tmp"
+		echo "Testing write access with ${USB_STICK_PATH}/${TEST_FILE_NAME}" \
+			>>${LOG_FILE}
+		echo "Test file from ${MY_FILE_NAME}" > \
+			"${USB_STICK_PATH}/${TEST_FILE_NAME}" 2>>${LOG_FILE}
+		cat "${USB_STICK_PATH}/${TEST_FILE_NAME}" >/dev/null 2>>${LOG_FILE}
+		CMD_RETURN="$?"
+		rm -f "${USB_STICK_PATH}/${TEST_FILE_NAME}" >>${LOG_FILE} 2>&1
+		if [[ "${CMD_RETURN}" -eq 0 ]]; then
+			echo "${USB_STICK} is available on ${USB_STICK_PATH}" | \
+				tee -a ${LOG_FILE}
+			USB_STICK_STATUS="available"
+		else
+			echo "ERROR - ${USB_STICK} failed write test on" \
+				"${USB_STICK_PATH}" | tee -a ${LOG_FILE} 2>&1
+			USB_STICK_STATUS="unavailable"
+		fi
+	else
+		echo "ERROR - ${USB_STICK} not writable on ${USB_STICK_PATH}" | \
+			tee -a ${LOG_FILE} 2>&1
+		USB_STICK_STATUS="unavailable"
+	fi
+else
+	echo "ERROR - ${USB_STICK} unavailable on ${USB_STICK_PATH}" | \
+		tee -a ${LOG_FILE} >&2
+	USB_STICK_STATUS="unavailable"
+fi
+
+case "${USB_STICK}" in
+	"USB_A")
+		USB_A_DEV="${USB_STICK_DEV}"
+		USB_A_STATUS="${USB_STICK_STATUS}"
+		;;
+	"USB_B")
+		USB_B_DEV="${USB_STICK_DEV}"
+		USB_B_STATUS="${USB_STICK_STATUS}"
+		;;
+	"USB_X")
+		USB_X_DEV="${USB_STICK_DEV}"
+		USB_X_STATUS="${USB_STICK_STATUS}"
+		;;
+esac
+
+if [[ "${USB_STICK_STATUS}" == "available" ]]; then
+	return $(true)
+else
+	return $(false)
+fi
+
+# $REQUIRES FILE ${SCU_HOME}/var/USB_memory.cf
+
+# EOF
+

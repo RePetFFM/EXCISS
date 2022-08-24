@@ -1,0 +1,78 @@
+###############################################################################
+#
+# SCU_Profile.102
+#
+# Science experiment profile / technical test
+#
+# Tests components of the experiment,
+# e.g. vibration and camera, without an ignition.
+# Amount of data should be small.
+#
+# DO NOT USE shebang (#!) IN LINE ONE OR 'exit' ANYWHERE IN THIS SCRIPT!
+#
+# $LOCATION ${SCU_HOME}/profiles
+#
+# $REQUIRES FILE ${SCU_HOME}/bin/MLU_camera
+# $REQUIRES FILE ${SCU_HOME}/bin/MLU_LED
+# $REQUIRES FILE ${SCU_HOME}/bin/MLU_shaker
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_Profile.102
+# $VERSION_NUMBER 0.5.1
+# $VERSION_DATE 2018-07-25_02:55:00
+#
+###############################################################################
+
+#
+# Take one dark image
+#
+MLU_LED -a -i 0                                  # turn off front+back LED
+MLU_camera -s -n ImgCal_f0b0                     # take 1 still image
+
+#
+# Take one bright image
+#
+MLU_LED -b -i 20                                 # turn on back LED at 20/255
+MLU_camera -s -n ImgCal_f0b20                    # take 1 still image
+
+#
+# Vibration 1x 5s
+#
+MLU_LED -a -i 0                                  # turn off front+back LED
+MLU_shaker -t 5                                  # shake 5s
+
+#
+# Repeat 60x
+#
+MLU_LED -b -i 20                                 # turn on back LED at 20/255
+for ((i=1;i<=60;i++)); do                        # repeat 60 times
+
+	echo "Iteration: ${i}"
+
+	#
+	# Take one bright image - high resolution (default)
+	#
+	MLU_camera -s -n ImgCal_f0b20_${i}            # take 1 still image
+
+	#
+	# Wait for 1s
+	#
+	sleep 1                                       # wait for 1s
+
+	#
+	# Take 9x one bright image - low resolution
+	#
+	MLU_camera -s -q 20 -n ImgCal_f0b20_q20_${i}  # take 1 still image
+
+	#
+	# Wait for 1s
+	#
+	sleep 1                                       # wait for 1s
+
+done
+
+###############################################################################
+# EOF
+###############################################################################
+

@@ -1,0 +1,152 @@
+#!/bin/bash
+#
+# SCU_experiment_main
+#
+
+# Requires: SCU_cycle
+# Expects work directory to match the current experiment cycle
+
+export SCU_HOME="/opt/MLU/SCU"
+SCU_CYCLE_CMD="${SCU_HOME}/bin/SCU_cycle"
+SCU_PROFILE_QUEUE="${SCU_HOME}/var/SCU_profile_queue.cf"
+SCU_PROFILE_QUEUE_TEMP="${SCU_PROFILE_QUEUE}.NEW"
+SCU_PROFILE_DIR="${SCU_HOME}/profiles"
+SCU_PROFILE_NAME_BASE="SCU_profile"
+
+SCU_CYCLE_NUMBER="$(${SCU_HOME}/bin/SCU_cycle 2>/dev/null)"
+WORK_DIRECTORY="$(pwd)"
+
+if [[ ! "${WORK_DIRECTORY}" == \
+		"${SCU_HOME}/USB_"?"/${SCU_CYCLE_NUMBER}" ]]; then
+	echo "Warning: Work directory does not match experiment cycle!" >&2
+fi
+
+# Select next profile from top of queue
+NEXT_PROFILE=$(cat ${SCU_PROFILE_QUEUE} | \
+	awk -F ";" '$1~/^[0-9]+$/ {print $1; exit}')
+
+if [[ -z "${NEXT_PROFILE}" ]]; then
+	NEXT_PROFILE="0" # no next profile found
+fi
+
+# Extract parameters from Queue
+# Queue entries: Profile[;Iterations[;Timeout[;Pause]]]
+PROFILE_QUEUE_ITERATIONS=$(cat ${SCU_PROFILE_QUEUE} | \
+	awk -F ";" -v PROFILE="${NEXT_PROFILE}" '$1 == PROFILE \
+	{gsub("#(.)*$", ""); print $2; exit}')
+
+PROFILE_QUEUE_TIMEOUT=$(cat ${SCU_PROFILE_QUEUE} | \
+	awk -F ";" -v PROFILE="${NEXT_PROFILE}" '$1 == PROFILE \
+	{gsub("#(.)*$", ""); print $3; exit}')
+
+PROFILE_QUEUE_PAUSE=$(cat ${SCU_PROFILE_QUEUE} | \
+	awk -F ";" -v PROFILE="${NEXT_PROFILE}" '$1 == PROFILE \
+	{gsub("#(.)*$", ""); print $4; exit}')
+
+NEXT_PROFILE_FILE="${SCU_PROFILE_DIR}/${SCU_PROFILE_NAME_BASE}.${NEXT_PROFILE}"
+
+# Add SCU_HOME/bin to PATH so MLU_commands are executable just by name
+export PATH="${PATH}:${SCU_HOME}/bin"
+
+echo "SCU cycle number: ${SCU_CYCLE_NUMBER}"
+echo "Work directory: ${WORK_DIRECTORY}"
+echo
+echo "Profile queue: ${SCU_PROFILE_QUEUE}"
+echo "Next profile: ${NEXT_PROFILE}"
+echo "Iterations: ${PROFILE_QUEUE_ITERATIONS}"
+echo "Timeout: ${PROFILE_QUEUE_TIMEOUT}"
+echo "Pause: ${PROFILE_QUEUE_PAUSE}"
+echo
+if [[ -f "${NEXT_PROFILE_FILE}" ]]; then
+	echo "Profile file: ${NEXT_PROFILE_FILE} (exists)"
+else
+	echo "Profile file: ${NEXT_PROFILE_FILE} (does not exist)"
+fi
+
+if [[ -f "${NEXT_PROFILE_FILE}" ]]; then
+
+	echo
+	echo "Processing profile $(basename ${NEXT_PROFILE_FILE})"
+
+	PROFILE_LOG="${WORK_DIRECTORY}/$(date +%Y%m%d_%H%M%S)_${SCU_CYCLE_NUMBER}_SCU_profile.${NEXT_PROFILE}.log"
+	echo "Log file: ${PROFILE_LOG}"
+
+	echo "##################################################" > ${PROFILE_LOG}
+	echo "#" >> ${PROFILE_LOG}
+	echo "# SCU_Profile.${NEXT_PROFILE} Execution Log" >> ${PROFILE_LOG}
+	echo "#" >> ${PROFILE_LOG}
+	echo "##################################################" >> ${PROFILE_LOG}
+	echo >> ${PROFILE_LOG}
+	echo "SCU cycle number: ${SCU_CYCLE_NUMBER}" >> ${PROFILE_LOG}
+	echo "Work directory: ${WORK_DIRECTORY}" >> ${PROFILE_LOG}
+	echo >> ${PROFILE_LOG}
+	echo "Profile queue: ${SCU_PROFILE_QUEUE}" >> ${PROFILE_LOG}
+	echo "Next profile: ${NEXT_PROFILE}" >> ${PROFILE_LOG}
+	echo "Iterations: ${PROFILE_QUEUE_ITERATIONS}" >> ${PROFILE_LOG}
+	echo "Timeout: ${PROFILE_QUEUE_TIMEOUT}" >> ${PROFILE_LOG}
+	echo "Pause: ${PROFILE_QUEUE_PAUSE}" >> ${PROFILE_LOG}
+	echo >> ${PROFILE_LOG}
+	if [[ -f "${NEXT_PROFILE_FILE}" ]]; then
+		echo "Profile file: ${NEXT_PROFILE_FILE} (exists)" >> ${PROFILE_LOG}
+	else
+		echo "Profile file: ${NEXT_PROFILE_FILE} (does not exist)" >> ${PROFILE_LOG}
+	fi
+	echo >> ${PROFILE_LOG}
+	date +"%Y-%m-%d %H:%M:%S" >> ${PROFILE_LOG}
+	echo >> ${PROFILE_LOG}
+
+	cp -p "${SCU_PROFILE_QUEUE}" "${SCU_PROFILE_QUEUE}.OLD"
+
+	# Prepare queue update
+	awk -v PROFILE="${NEXT_PROFILE}" 'BEGIN{FOUND=0} \
+		{if($0~"^"PROFILE && FOUND<1){$0="#"$0; FOUND=1}; print}' \
+		"${SCU_PROFILE_QUEUE}" >"${SCU_PROFILE_QUEUE}.NEW"
+
+	if [[ $(diff "${SCU_PROFILE_QUEUE}.NEW" "${SCU_PROFILE_QUEUE}" | \
+			awk -F ";" '$1~/^< / {print substr($1, 3)}') == "#${NEXT_PROFILE}" ]]; then
+		echo "Queue update successfully prepared"
+		# diff "${SCU_PROFILE_QUEUE}.NEW" "${SCU_PROFILE_QUEUE}" | egrep "^<|^>"
+	fi
+
+	# Execute profile script
+	date +"%Y-%m-%d %H:%M:%S"
+
+	# Backup and modify shell PS4 prompt
+	PS4_BEFORE="$PS4" # backup current PS4 prompt (typically "+")
+	PS4="#_Profile_${NEXT_PROFILE}_# "
+
+	echo
+	# Backup and modify shell x option
+	SET_X_BEFORE=$(echo $- | grep "x" && echo "-x" || echo "+x")
+	set -x # Set shell option -x (trace of commands)
+
+	# Execute SCU science
+	echo "Running ${NEXT_PROFILE_FILE}"
+	echo "--------------------------------------------------"
+	. "${NEXT_PROFILE_FILE}" 2>&1 | tee -a ${PROFILE_LOG}
+	echo "--------------------------------------------------"
+	echo
+
+	set ${SET_X_BEFORE} # reset shell x option to previous state {-x|+x}
+	PS4="${PS4_BEFORE}" # reset shell PS4 prompt to previous state
+
+	date +"%Y-%m-%d %H:%M:%S"
+
+	# Apply update to profile queue after processing is complete
+	cp "${SCU_PROFILE_QUEUE}.NEW" "${SCU_PROFILE_QUEUE}"
+	rm "${SCU_PROFILE_QUEUE}.NEW"
+
+	echo >> ${PROFILE_LOG}
+	date +"%Y-%m-%d %H:%M:%S" >> ${PROFILE_LOG}
+	echo >> ${PROFILE_LOG}
+
+	echo "##################################################" >> ${PROFILE_LOG}
+
+	# Post-process log file (remove "# " lines, replace "##_" with "#_")
+	PROFILE_LOG_TXT="$(basename ${PROFILE_LOG} .log).txt"
+	cat "${PROFILE_LOG}" | egrep -v "lib_MCU_serial_send|#_Profile_101_# \(\(|^[ \t]*$" | \
+		sed -e "s/^##_/#_/g" | sed -e "s/#_Profile_101_#/\n#_Profile_101_#/g" >"${PROFILE_LOG_TXT}"
+	mv "${PROFILE_LOG_TXT}" "${PROFILE_LOG}"
+
+fi
+

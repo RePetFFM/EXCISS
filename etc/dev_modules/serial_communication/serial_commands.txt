@@ -1,0 +1,43 @@
+Serial commands between Raspberry Pi and Arduino
+
+python example code:
+command = "rdt"
+arduino_serial.write(command+"\n")
+
+
+
+
+Read date time from Arduino:
+	serial command: rdt
+		rdt = read date time
+
+Read health data from Arduino:
+	serial command: rh
+		rh = read health
+
+LED PWM duty circle 0-254 in HEX 00-FF
+	serial command: wf##
+		wf = write front
+	serial command: wb##
+		wf = write back
+
+example to turn off LED's:
+	serial command: wf00
+	serial command: wb00
+
+Shaker on off
+	serial command: ese
+		ese = execute shaker enable
+
+	serial command: esd
+		esd = execute shaker disable
+
+send shutdown request to Arduino via serial:
+	serial command: erd
+		erd = execute raspberry disable
+
+
+
+
+
+[cond][pi][ard]	If mission end kill config information detected. Do finals shutdown.

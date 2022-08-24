@@ -1,0 +1,53 @@
+#!/usr/bin/python
+###############################################################################
+#
+# PI_shutdown_IO
+#
+# Shuts down Raspbian on SCU when triggered by GPIO (from MCU).
+#
+# Shutdown switch is pin 36 (Physical pin 36 / GPIO/BCM pin 16 / WiringPi 27)
+#
+# https://pinout.xyz
+# https://pypi.python.org/pypi/RPi.GPIO
+# https://sourceforge.net/p/raspberry-gpio-python/wiki/Inputs/
+#
+# Needs sudo (root) for shutdown
+#
+# $LOCATION ${SCU_HOME}/bin
+#
+# $REQUIRES PACKAGE python-dev
+# $REQUIRES PACKAGE python-rpi.gpio
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.PI_shutdown_IO
+# $VERSION_NUMBER 0.5.2
+# $VERSION_DATE 2018-07-22_01:25:00
+#
+###############################################################################
+
+import os
+import time
+import RPi.GPIO as GPIO
+
+Shutdown_pin = 36 # Physical pin used by MCU to request shutdown of RPi
+
+GPIO.setmode(GPIO.BOARD) # adress the pins by the number of the pin in the plug
+GPIO.setup(Shutdown_pin, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+
+def Shutdown(channel):
+   print "Shutdown of Raspberry Pi triggered by GPIO (pin " + str(Shutdown_pin) + ")"
+   os.system("sync;sync")
+   os.system("sudo shutdown -Fh now")
+
+GPIO.add_event_detect(Shutdown_pin, GPIO.RISING, callback = Shutdown, bouncetime = 200)
+
+print "PI_shutdown_IO: Waiting for shutdown signal on pin " + str(Shutdown_pin)
+
+while 1:
+   time.sleep(1) # sleep 1 second
+
+###############################################################################
+# EOF
+###############################################################################
+

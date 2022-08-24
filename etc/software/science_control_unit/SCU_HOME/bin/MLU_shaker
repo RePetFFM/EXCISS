@@ -1,0 +1,427 @@
+#!/bin/bash
+###############################################################################
+#
+# MLU_shaker
+#
+# Controls the shaker (vibration motor) of the SEU.
+#
+# $LOCATION ${SCU_HOME}/bin
+#
+# $REQUIRES VARIABLE SCU_HOME
+# $REQUIRES VARIABLE MLU_SHAKER_DEF_WAVEFORM
+# $REQUIRES LIBRARY ${SCU_HOME}/lib/lib_SCU_base
+# $REQUIRES LIBRARY ${SCU_HOME}/lib/lib_MCU_message
+#
+# $RETURNS 0 success
+# $RETURNS 1 general error
+# $RETURNS 2 invalid option or argument
+# $RETURNS 3 failed to load environment
+# $RETURNS 4 error performing requested task
+#
+# $COMPONENT_NAME MLU.SCU.MLU_shaker
+# $VERSION_NUMBER 0.5.2
+# $VERSION_DATE 2018-07-26_14:55:00
+#
+###############################################################################
+# set -x
+unalias -a
+
+#------------------------------------------------------------------------------
+# Define global environment variables
+#------------------------------------------------------------------------------
+
+MY_START_TIME="$(date +%Y-%m-%d_%H:%M:%S)" # current time early after start
+MY_DIR_NAME="$(dirname $0)" # directory where this script is located
+MY_FILE_NAME="$(basename $0)" # file name of this script (without path)
+MY_BASE_NAME="$(basename ${MY_FILE_NAME} .sh)" # script name without ".sh"
+MY_EXEC_USER="$(whoami 2>/dev/null)" # name of user who started this script
+MY_PROCESS_ID="$(ps -fp $$ -o pid= | awk '{print $1}')" # PID of this script
+MY_PARENT_ID="$(ps -fp $$ -o ppid= | awk '{print $1}')" # PID of parent process
+MY_ARG_COUNT="$#" # number of parameters passed to this script
+MY_ARG_LIST="$@" # list of all parameters passed to this script
+WORK_DIR_NAME="$(pwd)" # current work directory of shell starting this script
+typeset -i RETURN_CODE=0 # return code of previous command (0=success)
+typeset -i MY_EXIT_RC=1 # return code of this script (0=success)(default=1)
+typeset -i OPT_EXCLUSIVE_COUNT=0 # counter for mutually exclusive options
+typeset -i OPT_REQUIRED_COUNT=0 # counter for required options
+
+F_LIB_SCU_BASE_NAME="lib_SCU_base" # library lib_SCU_base
+F_LIB_SCU_BASE_REL="lib/${F_LIB_SCU_BASE_NAME}" # relative dir
+F_LIB_MCU_MESSAGE_NAME="lib_MCU_message" # library lib_MCU_message
+F_LIB_MCU_MESSAGE_REL="lib/${F_LIB_MCU_MESSAGE_NAME}" # relative dir
+
+#------------------------------------------------------------------------------
+#
+# Function f_Print_Help
+#
+# Shows the usage of this script.
+# Usage: f_Print_Help
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Print_Help {
+
+	echo "Usage: ${MY_FILE_NAME} -t Duration [-w Waveform][-v][-V][-h]"
+	echo "Controls the shaker (vibration motor) of the SEU."
+	echo
+	echo "  -t     Duration of vibration [s]"
+	echo "  -w     Waveform pattern"
+	echo "  -v     print verbose output"
+	echo "  -V     print version of this script"
+	echo "  -h     print this help message"
+	echo
+	echo "Waveform:=[Effect[,Effect,...]]{1,8} | Effect:={0..7F} (hex)"
+	echo
+	echo "Example: ${MY_FILE_NAME} -t 5"
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Load_SCU_Env
+#
+# Loads the SCU environment with global variables and functions.
+# Usage: f_Load_SCU_Env
+# Returns: 0 success
+# Returns: 1 variable $SCU_HOME is undefined
+# Returns: 2 directory $SCU_HOME is invalid
+# Returns: 3 failed to load SCU environment
+#------------------------------------------------------------------------------
+
+function f_Load_SCU_Env {
+
+	if [[ -z "${SCU_HOME}" ]]; then
+
+		echo "ERROR: Variable SCU_HOME not defined in environment!" >&2
+		return 1
+
+	else
+
+		if [[ ! -e "${SCU_HOME}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: Directory SCU_HOME=${SCU_HOME} does not exist!" >&2
+			fi
+			return 2
+
+		elif [[ ! -e "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: SCU_HOME=${SCU_HOME} is not a valid SCU" \
+					"installation!" >&2
+			fi
+			return 2
+
+		else
+
+			if "${OPTION_LOWER_V}"; then
+				echo "Calling library function:" \
+					"${SCU_HOME}/${F_LIB_SCU_BASE_REL} f_SCU_Load_Env" >&2
+			fi
+
+			export SCU_HOME # export current SCU_HOME for calls to libraries
+			unset SCU_ENV_VERSION_NUMBER SCU_ENV_VERSION_DATE # clear variables
+			. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Load_Env # source SCU_env
+
+			if [[ -n "${SCU_ENV_VERSION_NUMBER}" && \
+					-n "${SCU_ENV_VERSION_DATE}" ]]; then
+
+				if "${OPTION_LOWER_V}"; then
+					echo "Successfully loaded SCU environment version:" \
+						"${SCU_ENV_VERSION_NUMBER} (${SCU_ENV_VERSION_DATE})" >&2
+					echo "Using SCU_HOME=${SCU_HOME}" >&2
+					echo >&2
+				fi
+				return 0
+
+			else
+
+				if "${OPTION_LOWER_V}"; then
+					echo "ERROR: Failed to load SCU environment in" \
+						"SCU_HOME=${SCU_HOME}!" >&2
+				fi
+				return 3
+
+			fi
+
+		fi
+
+	fi
+
+}
+
+#------------------------------------------------------------------------------
+# Parse command line parameters
+#------------------------------------------------------------------------------
+
+GETOPTS_OPTSTRING=":t:w:vVh" # needs to start with ':' for quiet mode
+
+OPTION_LOWER_T=false
+OPTION_LOWER_W=false
+OPTION_LOWER_V=false
+OPTION_UPPER_V=false
+OPTION_LOWER_H=false
+OPTION_LOWER_T_ARG=""
+OPTION_LOWER_W_ARG=""
+
+#
+# Print help (-h|-?) and version (-V) on priority
+# (will not work if given as an argument to an option requiring arguments)
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts "${GETOPTS_OPTSTRING}" CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"v")
+			OPTION_LOWER_V=true
+			;;
+		"V")
+			OPTION_UPPER_V=true
+			;;
+		"h")
+			OPTION_LOWER_H=true
+			;;
+		"?")
+			if [[ "${OPTARG}" == "?" ]]; then
+				OPTION_LOWER_H=true
+			fi
+			;;
+	esac
+done
+
+if "${OPTION_LOWER_H}"; then
+	f_Print_Help
+	exit 0
+fi
+
+if "${OPTION_UPPER_V}"; then
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	if [[ -n "${MY_VERSION_NUMBER}" && -n "${MY_VERSION_DATE}" ]]; then
+		echo "${MY_BASE_NAME} version ${MY_VERSION_NUMBER}" \
+			"(${MY_VERSION_DATE})"
+		exit 0
+	else
+		echo "ERROR: Can not find version information" \
+			"for ${MY_BASE_NAME}!" >&2
+		exit 1
+	fi
+fi
+
+#
+# Parse remaining command line options and arguments
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts "${GETOPTS_OPTSTRING}" CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"t")
+			OPTION_LOWER_T=true
+			OPTION_LOWER_T_ARG="${OPTARG}"
+			;;
+		"w")
+			OPTION_LOWER_W=true
+			OPTION_LOWER_W_ARG="${OPTARG}"
+			;;
+		"?")
+			echo "ERROR: Invalid option -${OPTARG} specified!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+		":")
+			echo "ERROR: Option -${OPTARG} requires an argument!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+	esac
+done
+
+#
+# Parse trailing positional parameters
+# ($OPTIND, $OPTIND+1, $OPTIND+2, ...)
+#
+
+POS_PARAM1="${@:$OPTIND:1}"
+if [[ -n "${POS_PARAM1}" ]]; then
+	# no positional parameter at all is expected
+	echo "ERROR: Parameter ${POS_PARAM1} not expected!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify required parameters are present
+#
+
+"${OPTION_LOWER_T}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+if [[ ${OPT_REQUIRED_COUNT} -le 0 ]]; then
+	echo "ERROR: Required option -t missing!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#------------------------------------------------------------------------------
+# Load SCU environment with global variables (e.g. DEBUG_LEVEL)
+#------------------------------------------------------------------------------
+
+f_Load_SCU_Env
+RETURN_CODE=$?
+if [[ ${RETURN_CODE} -gt 0 ]]; then
+	echo "ERROR: Failed to initialize the SCU runtime environment!" >&2
+	exit 3
+fi
+
+#
+# Adjust DEBUG_LEVEL (set in SCU_env) if verbose option was specified
+#
+
+if "${OPTION_LOWER_V}"; then
+	DEBUG_LEVEL=${DEBUG_LEVEL_DETAIL}
+fi
+
+#
+# Print details of this process
+#
+
+if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+	. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Process_Info >&2 # source into
+	echo >&2
+fi
+
+#------------------------------------------------------------------------------
+# Perform main program
+#------------------------------------------------------------------------------
+
+SHAKER_DURATION="${OPTION_LOWER_T_ARG}"
+SHAKER_WAVEFORM="${OPTION_LOWER_W_ARG}"
+
+# Get MLU_SHAKER_DEF_WAVEFORM from SCU_env if not provided
+if [[ ! "${OPTION_LOWER_W}" || -z "${SHAKER_WAVEFORM}" ]]; then
+	SHAKER_WAVEFORM="${MLU_SHAKER_DEF_WAVEFORM}"
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Using default shaker waveform from SCU_env (${SHAKER_WAVEFORM})"
+	fi
+fi
+
+echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Info" \
+	"Sending waveform definition to shaker"
+
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+## TODO ## Needs comm protocol clarification with MCU
+exit
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+
+
+
+# Shaker_Waveform Index Effect  wvs define vibration sequence
+EXEC_CMD="${SCU_HOME}/${F_LIB_MCU_MESSAGE_REL} f_MCU_send"
+EXEC_CMD="${EXEC_CMD} Shaker ${SHAKER_DURATION} ${SHAKER_DURATION}"
+
+
+		# Shaker_Waveform Index Effect
+		# wvs{0..8},{0..254} (default: 0,0)
+
+		# Index {0..8}
+		# Effect {}
+
+		# Shaker Duration Pattern
+		# evg (on) for Duration, then evs (off)
+		# Pattern := [Effect[,Effect,...]]{0,8}
+		# Effect := {0..254}
+
+		# Pattern: shaker waveform, 0-8x Effect separated by ","
+		# Define array wvs[0-8]={0..254} with one Effect per element
+		# Then start (evg) and stop (evs) shaker for Duration [s]
+
+
+# Shaker_Waveform Index Effect  wvs define vibration sequence
+# Shaker_Power {On|Off}  evg (start) | evs (stop) vibration motor (shaker)
+
+
+	echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Info" \
+		"Shaking for ${SHAKER_DURATION}s with pattern ${SHAKER_WAVEFORM}"
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Executing command: ${EXEC_CMD}"
+	fi
+
+	${EXEC_CMD}
+	RETURN_CODE=$?
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Return code: ${RETURN_CODE}"
+	fi
+
+	if [[ "${RETURN_CODE}" -eq 0 ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Info" \
+		"Successfully set back LED to intensity ${LED_INTENSITY}"
+		MY_EXIT_RC=0
+	else
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} ERROR" \
+		"Failed to set back LED to intensity ${LED_INTENSITY}"
+		MY_EXIT_RC=4
+	fi
+
+fi
+
+#
+# Control the front light LED
+#
+
+if "${OPTION_LOWER_A}" || "${OPTION_LOWER_F}"; then
+
+	echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Info" \
+		"Setting front LED to intensity ${LED_INTENSITY}"
+
+	EXEC_CMD="${SCU_HOME}/${F_LIB_MCU_MESSAGE_REL} f_MCU_send"
+	EXEC_CMD="${EXEC_CMD} LED_Front ${LED_INTENSITY}"
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Executing command: ${EXEC_CMD}"
+	fi
+
+	${EXEC_CMD}
+	RETURN_CODE=$?
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Return code: ${RETURN_CODE}"
+	fi
+
+	if [[ "${RETURN_CODE}" -eq 0 ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Info" \
+		"Successfully set back LED to intensity ${LED_INTENSITY}"
+		MY_EXIT_RC=0
+	else
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} ERROR" \
+		"Failed to set back LED to intensity ${LED_INTENSITY}"
+		MY_EXIT_RC=4
+	fi
+
+fi
+
+exit ${MY_EXIT_RC}
+
+###############################################################################
+# EOF
+###############################################################################
+

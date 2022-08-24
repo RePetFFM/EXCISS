@@ -1,0 +1,67 @@
+#!/bin/bash
+#
+# RTC_date
+#
+# Needs sudo (root) for date
+#
+
+# NTP must be disabled, otherwise date can not be set manually
+#
+# # sudo timedatectl
+#      Local time: Sun 2017-07-23 04:47:04 UTC
+#  Universal time: Sun 2017-07-23 04:47:04 UTC
+#        RTC time: n/a
+#       Time zone: Etc/UTC (UTC, +0000)
+# Network time on: no
+#NTP synchronized: no
+# RTC in local TZ: no
+
+
+SCU_HOME="/opt/MLU/SCU"
+
+. "${SCU_HOME}/etc/SCU_env"
+
+LIB_SERIAL_SEND="${SCU_HOME}/lib_MCU_SerialSend"
+
+if [[ "$(whoami)" != "root" ]]; then
+	CMD_PREFIX_SUDO="sudo "
+else
+	CMD_PREFIX_SUDO=""
+fi
+
+
+# All dates are UTC
+
+if [[ -z "$1" ]]; then
+	echo "Usage: $0 -u" >&2
+elif [[ "$1" == "-u" ]]; then
+
+	echo "Updating date from MCU"
+
+	MCU_DATE=$("${SCU_HOME}/${F_LIB_MCU_MESSAGE_REL}" \
+		f_MCU_send MCU_Date | \
+		awk -F "=" '$1~/^current_unix_timestamp[ \t]*$/ \
+		{gsub("[ \t]+", "", $2); print $2}')
+	RETURN_CODE=$?
+
+	NEW_DATE=$(date -u -d @${MCU_DATE} +"%m%d%H%M%Y.%S")
+
+	CURRENT_DATE=$(date -u +"%s")
+
+	echo "Current SCU date:   $(date -u -d @${CURRENT_DATE} +${DATE_FORMAT_LONG}) (${CURRENT_DATE})"
+
+	echo "Date read from MCU: $(date -u -d @${MCU_DATE} +${DATE_FORMAT_LONG}) (${MCU_DATE})"
+
+	# Change local date to date read from MCU
+
+	echo "Setting local date to [MMDDhhmmCCYY.ss]: ${NEW_DATE}"
+	${CMD_PREFIX_SUDO}date -u ${NEW_DATE} >/dev/null
+
+	echo "Updated SCU date:   $(date -u -d @${CURRENT_DATE} +${DATE_FORMAT_LONG}) (${CURRENT_DATE})"
+
+	# echo "System Uptime: $(uptime)"
+
+## TODO ## Date recovery: If MCU_Date ist invalid/empty, find last save date from SCU_HOME + USB, set clock +1m
+
+fi
+

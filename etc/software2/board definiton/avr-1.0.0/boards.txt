@@ -1,0 +1,34 @@
+# EXCISS Board Contribution Configuration
+#
+# For more information see:
+# * https://github.com/arduino/Arduino/wiki/Arduino-IDE-1.5-3rd-party-Hardware-specification
+# * https://github.com/arduino/Arduino/wiki/Arduino-Hardware-Cores-migration-guide-from-1.0-to-1.6
+#
+
+##############################################################################
+########################## EXCISS Main Control Unit ##########################
+##############################################################################
+exciss.name=EXCISS Main Control Unit
+
+exciss.upload.tool=arduino:avrdude
+exciss.upload.protocol=wiring
+exciss.upload.maximum_data_size=8192
+
+exciss.bootloader.tool=avrdude
+exciss.bootloader.unlock_bits=0x3F
+exciss.bootloader.lock_bits=0x0F
+
+exciss.build.board=AVR_MEGA2560
+exciss.build.core=arduino:arduino
+exciss.build.variant=arduino:mega
+exciss.build.mcu=atmega2560
+
+exciss.upload.maximum_size=258048
+exciss.upload.speed=57600
+
+exciss.bootloader.low_fuses=0xFF
+exciss.bootloader.high_fuses=0x90
+exciss.bootloader.extended_fuses=0xFD
+exciss.bootloader.file=mega/stk500boot_v2_mega2560.hex
+
+exciss.build.f_cpu=8000000L

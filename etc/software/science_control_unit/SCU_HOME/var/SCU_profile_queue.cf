@@ -1,0 +1,49 @@
+###############################################################################
+#
+# SCU_profile_queue.cf
+#
+# Queue of science experiment profiles to be executed.
+#
+# Queue entries:
+#   Profile[;Iterations[;Timeout[;Pause]]]
+#
+#   Profile:    Number of schience profile to execute
+#   Iterations: Number of times the profile will be executed (default: 1)
+#   Timeout:    Timeout after which profile will be killed [s] (default: 0)
+#   Pause:      Minimum time before next profile can start [s] (default: 0)
+#
+#   Profiles 0..99    are reseved for pre-flight ground tests
+#   Profiles 100..499 are reseved for technical tests
+#   Profiles 500..999 are defaults if communication fails
+#   Profiles 1000..   are used for scientific experiments
+#
+# $LOCATION ${SCU_HOME}/var
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_profile_queue.cf
+# $VERSION_NUMBER 0.5.1
+# $VERSION_DATE 2018-07-27_09:30:00
+#
+###############################################################################
+
+# Profile[;Iterations[;Timeout[;Pause]]]
+
+101;1;0;7200 # 101 starts immediately after 1st power on + fully charged
+102;1;0;7200 # 102 starts 2h (2x60x60s=7200s) after profile 101 ended
+103          # 103 starts 2h (2x60x60s=7200s) after profile 102 ended
+
+#201;1;0;7200 # 201 starts only after config file was sent from ground
+#202          # 202 starts 2h (2x60x60s=7200s) after profile 201 ended
+
+#500;1;0;3600 # 500 starts automatically after 7d without communication
+#501          # 501 starts 1h (60x60s=3600s) after profile 500
+
+#1000         # 1000 starts only after config file was sent from ground
+
+###############################################################################
+# EOF
+###############################################################################
+

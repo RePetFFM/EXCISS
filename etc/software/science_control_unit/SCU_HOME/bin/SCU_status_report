@@ -1,0 +1,413 @@
+#!/bin/bash
+#
+# SCU_status_report
+#
+# Needs sudo (root) for find, lshw, lsusb, fdisk, gpio (WirinPi)
+#
+# Requires lshw
+# Requires WirinPi
+# Requires bin/USB_memory
+# Requires bin/SCU_cycle
+
+export SCU_HOME="/opt/MLU/SCU"
+USB_MEMORY_CMD="${SCU_HOME}/bin/USB_memory"
+SCU_CYCLE_CMD="${SCU_HOME}/bin/SCU_cycle"
+SCU_PROFILE_QUEUE="${SCU_HOME}/var/SCU_profile_queue.cf"
+
+echo "####################################################"
+echo "#SCU_status_report"
+echo "####################################################"
+
+echo
+echo "Report start: $(date -u +%Y-%m-%d_%H:%M:%S)"
+
+#
+# Set up
+#
+
+echo
+# Power on all USB memory
+"${USB_MEMORY_CMD}" -pa
+
+# Mount all USB memory
+"${USB_MEMORY_CMD}" -ma
+
+echo
+echo "# --------------------------------------------------"
+echo "# MLU SCU details"
+echo "# --------------------------------------------------"
+echo
+
+echo "SCU_HOME=${SCU_HOME}"
+
+echo
+echo "SCU cycle: $(${SCU_CYCLE_CMD} 2>/dev/null)"
+
+echo
+echo "Experiment profile queue"
+egrep -v "^[ \t]*#|^[ \t]*$" "${SCU_PROFILE_QUEUE}"
+
+# SCU_keepalive
+# SCU_wakeup
+
+echo
+echo "# --------------------------------------------------"
+echo "# Files in ${SCU_HOME}"
+echo "# --------------------------------------------------"
+echo
+
+sudo find "${SCU_HOME}" -ls
+
+for USB_DEV in USB_A USB_B USB_X; do
+	echo
+	echo "# --------------------------------------------------"
+	echo "# Files in ${SCU_HOME}/${USB_DEV}"
+	echo "# --------------------------------------------------"
+	echo
+
+	sudo find "${SCU_HOME}/${USB_DEV}" -ls
+
+done
+
+echo
+echo "# --------------------------------------------------"
+echo "# SCU hardware details"
+echo "# --------------------------------------------------"
+echo
+
+sudo lshw
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "CPU info"
+echo
+lscpu
+
+echo
+cat /proc/cpuinfo
+
+echo "CPU 0 current frequency:" \
+	"$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq)"
+echo "CPU 0 minimum frequency:" \
+	"$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq)"
+echo "CPU 0 maximum frequency:" \
+	"$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)"
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "Frequencies"
+echo
+for SRC in arm core h264 isp v3d uart pwm emmc pixel vec hdmi dpi; do
+	echo -e "${SRC}: $(vcgencmd measure_clock ${SRC})"
+done
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "Voltages"
+echo
+for ID in core sdram_c sdram_i sdram_p; do
+	echo -e "${ID}: $(vcgencmd measure_volts ${ID})"
+done
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "Temperature of SoC (BCM2835)"
+echo
+vcgencmd measure_temp
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "USB devices"
+echo
+sudo lsusb
+
+echo
+sudo lsusb -t
+
+echo
+sudo lsusb -v
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+usb-devices
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "GPIO status"
+echo
+gpio readall
+
+echo
+echo "# --------------------------------------------------"
+echo "# Disk information"
+echo "# --------------------------------------------------"
+echo
+
+echo "Partition tables"
+echo
+sudo fdisk -l
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "Size and number of partitions"
+echo
+cat /proc/partitions
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+df -a
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+mount
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+for DEV in /dev/disk/by-path/*; do
+	echo "# ----------"
+	echo "# ${DEV}"
+	echo "# ----------"
+	echo
+	udevadm info -n ${DEV}
+done
+
+echo "# --------------------------------------------------"
+echo
+
+echo "Block devices"
+echo
+lsblk -ailp
+
+echo
+lsblk -ailp -o MOUNTPOINT,NAME,UUID,SERIAL,MODEL,TYPE -x TYPE
+
+echo
+echo "# --------------------------------------------------"
+echo "# System processes"
+echo "# --------------------------------------------------"
+echo
+
+uptime
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "Available/used/free memory"
+echo
+free
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+cat /proc/meminfo
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+ps -ef
+
+echo
+ps aux
+
+echo
+pstree -Acps
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+service --status-all
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+vmstat 1 5
+
+echo
+echo "# --------------------------------------------------"
+echo "# Software packages"
+echo "# --------------------------------------------------"
+echo
+
+echo "Raspbian version"
+echo
+cat /proc/version
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "Debian packages"
+echo
+dpkg -l
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+echo "Codecs"
+echo
+for CODEC in H264 MPG2 WVC1 MPG4 MJPG WMV9; do
+	echo -e "${CODEC}: $(vcgencmd codec_enabled ${CODEC})"
+done
+
+#
+# Network configuration
+#
+
+echo
+echo "# --------------------------------------------------"
+echo "# Network configuration"
+echo "# --------------------------------------------------"
+echo
+
+echo "IP address"
+echo
+hostname -I
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+ifconfig -a
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+netstat -an
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+iwconfig # WLAN interface
+
+echo "# --------------------------------------------------"
+echo
+
+iwlist wlan0 scan # available SSIDS
+
+echo "# --------------------------------------------------"
+echo "# VideoCore Tools"
+echo "# --------------------------------------------------"
+echo
+
+# VideoCore Tools Commands
+# https://github.com/nezticle/RaspberryPi-BuildRoot/wiki/VideoCore-Tools
+#
+# # vcgencmd commands
+# commands="vcos, ap_output_control, ap_output_post_processing, vchi_test_init,
+# vchi_test_exit, vctest_memmap, vctest_start, vctest_stop, vctest_set,
+# vctest_get, pm_set_policy, pm_get_status, pm_show_stats, pm_start_logging,
+# pm_stop_logging, version, commands, set_vll_dir, set_backlight, set_logging,
+# get_lcd_info, arbiter, cache_flush, otp_dump, test_result, codec_enabled,
+# get_camera, get_mem, measure_clock, measure_volts, scaling_kernel,
+# scaling_sharpness, get_hvs_asserts, get_throttled, measure_temp, get_config,
+# hdmi_ntsc_freqs, hdmi_adjust_clock, hdmi_status_show, hvs_update_fields,
+# pwm_speedup, force_audio, hdmi_stream_channels, hdmi_channel_map,
+# display_power, read_ring_osc, memtest, dispmanx_list, get_rsts, schmoo,
+# render_bar, disk_notify, inuse_notify, sus_suspend, sus_status,
+# sus_is_enabled, sus_stop_test_thread, egl_platform_switch, mem_validate,
+# mem_oom, mem_reloc_stats, hdmi_cvt, hdmi_timings, file"
+
+echo "Print configuration"
+echo
+vcgencmd get_config int
+
+echo
+echo "Memory split between CPU and GPU"
+echo
+vcgencmd get_mem arm && vcgencmd get_mem gpu
+
+echo
+echo "Show firmware version"
+echo
+vcgencmd version
+
+echo
+echo "Display OTP (One Time Programmable) of SoC"
+echo
+vcgencmd otp_dump
+
+echo
+echo "Show video output status"
+echo
+vcgencmd display_power
+# Turn off/on with: vcgencmd display_power [{0|1}]
+
+echo
+echo "# --------------------------------------------------"
+echo "# Various"
+echo "# --------------------------------------------------"
+echo
+
+# Show the status of modules in the Linux Kernel (/proc/modules)
+lsmod
+
+echo
+getconf -a
+
+echo
+lsipc
+
+echo
+lslocks
+
+echo
+lsns
+
+echo
+systemctl -l list-units -a
+
+echo
+systemctl -l status -a
+
+echo
+systemctl -l show -a
+
+echo
+echo "# --------------------------------------------------"
+echo
+
+#
+# Clean up
+#
+
+# Unmount all USB memory
+"${USB_MEMORY_CMD}" -ua
+
+echo
+# Power off USB memory
+"${USB_MEMORY_CMD}" -qa
+
+echo "Report end: $(date -u +%Y-%m-%d_%H:%M:%S)"
+
+# EOF
+

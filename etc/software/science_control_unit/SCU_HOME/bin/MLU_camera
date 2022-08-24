@@ -1,0 +1,574 @@
+#!/bin/bash
+###############################################################################
+#
+# MLU_camera
+#
+# Records videos or takes still images with the camera of the SEU.
+#
+# $LOCATION ${SCU_HOME}/bin
+#
+# $REQUIRES VARIABLE SCU_HOME
+# $REQUIRES VARIABLE MLU_CAMERA_DEF_IMG_QUAL
+# $REQUIRES VARIABLE MLU_CAMERA_DEF_IMG_RES
+# $REQUIRES VARIABLE MLU_CAMERA_DEF_VID_FPS
+# $REQUIRES VARIABLE MLU_CAMERA_DEF_VID_RES
+# $REQUIRES VARIABLE MLU_CAMERA_FIXED_IMG_ARGS
+# $REQUIRES VARIABLE MLU_CAMERA_FIXED_VID_ARGS
+# $REQUIRES FILE ${SCU_HOME}/bin/SCU_cycle
+# $REQUIRES LIBRARY ${SCU_HOME}/lib/lib_SCU_base
+# $REQUIRES PACKAGE libraspberrypi-bin
+#
+# $RETURNS 0 success
+# $RETURNS 1 general error
+# $RETURNS 2 invalid option or argument
+# $RETURNS 3 failed to load environment
+# $RETURNS 4 error performing requested task
+#
+# $COMPONENT_NAME MLU.SCU.MLU_camera
+# $VERSION_NUMBER 0.5.2
+# $VERSION_DATE 2018-07-26_20:43:00
+#
+###############################################################################
+# set -x
+unalias -a
+
+#------------------------------------------------------------------------------
+# Define global environment variables
+#------------------------------------------------------------------------------
+
+MY_START_TIME="$(date +%Y-%m-%d_%H:%M:%S)" # current time early after start
+MY_DIR_NAME="$(dirname $0)" # directory where this script is located
+MY_FILE_NAME="$(basename $0)" # file name of this script (without path)
+MY_BASE_NAME="$(basename ${MY_FILE_NAME} .sh)" # script name without ".sh"
+MY_EXEC_USER="$(whoami 2>/dev/null)" # name of user who started this script
+MY_PROCESS_ID="$(ps -fp $$ -o pid= | awk '{print $1}')" # PID of this script
+MY_PARENT_ID="$(ps -fp $$ -o ppid= | awk '{print $1}')" # PID of parent process
+MY_ARG_COUNT="$#" # number of parameters passed to this script
+MY_ARG_LIST="$@" # list of all parameters passed to this script
+WORK_DIR_NAME="$(pwd)" # current work directory of shell starting this script
+typeset -i RETURN_CODE=0 # return code of previous command (0=success)
+typeset -i MY_EXIT_RC=1 # return code of this script (0=success)(default=1)
+typeset -i OPT_EXCLUSIVE_COUNT=0 # counter for mutually exclusive options
+typeset -i OPT_REQUIRED_COUNT=0 # counter for required options
+
+F_LIB_SCU_BASE_NAME="lib_SCU_base" # library lib_SCU_base
+F_LIB_SCU_BASE_REL="lib/${F_LIB_SCU_BASE_NAME}" # relative dir
+F_BIN_SCU_CYCLE_NAME="SCU_cycle" # binary
+F_BIN_SCU_CYCLE_REL="bin/${F_BIN_SCU_CYCLE_NAME}" # relative dir
+
+#------------------------------------------------------------------------------
+#
+# Function f_Print_Help
+#
+# Shows the usage of this script.
+# Usage: f_Print_Help
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Print_Help {
+
+	echo "Usage: ${MY_FILE_NAME} {-d -t Duration [-f fps]|-s [-q Quality]}" \
+		"[-r Resolution] -n FileNameBase [-v][-V][-h]"
+	echo "Records videos or takes still images with the camera of the SEU."
+	echo
+	echo "  -d     record a video"
+	echo "  -f     video frames per second [fps]"
+	echo "  -n     base of image or video file name"
+	echo "  -q     quality of still image {0..100}"
+	echo "  -r     image or video resoultion (width x height)"
+	echo "  -s     take a still image"
+	echo "  -t     duration of video [s]"
+	echo "  -v     print verbose output"
+	echo "  -V     print version of this script"
+	echo "  -h     print this help message"
+	echo
+	echo "Image or video files are created in the current work direktory."
+	echo "File name base (-n) will be prefixed with date and cycle number and"
+	echo "suffixed with parameters, a sequential number (for videos) and a"
+	echo "file extension:"
+	echo "Video: YYYYMMDD_hhmmss_Cycle_FileNameBase_rRes_fFps_tDur-Seq.h264"
+	echo "Image: YYYYMMDD_hhmmss_Cycle_FileNameBase_rRes_qQua.{png|jpg}"
+	echo "Still image quality (-q) 100 creates PNG images, 0..99 creates JPEGs."
+	echo
+	echo "Example: ${MY_FILE_NAME} -s -q 20 -n ImgCal_f0b0"
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Load_SCU_Env
+#
+# Loads the SCU environment with global variables and functions.
+# Usage: f_Load_SCU_Env
+# Returns: 0 success
+# Returns: 1 variable $SCU_HOME is undefined
+# Returns: 2 directory $SCU_HOME is invalid
+# Returns: 3 failed to load SCU environment
+#------------------------------------------------------------------------------
+
+function f_Load_SCU_Env {
+
+	if [[ -z "${SCU_HOME}" ]]; then
+
+		echo "ERROR: Variable SCU_HOME not defined in environment!" >&2
+		return 1
+
+	else
+
+		if [[ ! -e "${SCU_HOME}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: Directory SCU_HOME=${SCU_HOME} does not exist!" >&2
+			fi
+			return 2
+
+		elif [[ ! -e "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: SCU_HOME=${SCU_HOME} is not a valid SCU" \
+					"installation!" >&2
+			fi
+			return 2
+
+		else
+
+			if "${OPTION_LOWER_V}"; then
+				echo "Calling library function:" \
+					"${SCU_HOME}/${F_LIB_SCU_BASE_REL} f_SCU_Load_Env" >&2
+			fi
+
+			export SCU_HOME # export current SCU_HOME for calls to libraries
+			unset SCU_ENV_VERSION_NUMBER SCU_ENV_VERSION_DATE # clear variables
+			. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Load_Env # source SCU_env
+
+			if [[ -n "${SCU_ENV_VERSION_NUMBER}" && \
+					-n "${SCU_ENV_VERSION_DATE}" ]]; then
+
+				if "${OPTION_LOWER_V}"; then
+					echo "Successfully loaded SCU environment version:" \
+						"${SCU_ENV_VERSION_NUMBER} (${SCU_ENV_VERSION_DATE})" >&2
+					echo "Using SCU_HOME=${SCU_HOME}" >&2
+					echo >&2
+				fi
+				return 0
+
+			else
+
+				if "${OPTION_LOWER_V}"; then
+					echo "ERROR: Failed to load SCU environment in" \
+						"SCU_HOME=${SCU_HOME}!" >&2
+				fi
+				return 3
+
+			fi
+
+		fi
+
+	fi
+
+}
+
+#------------------------------------------------------------------------------
+# Parse command line parameters
+#------------------------------------------------------------------------------
+
+GETOPTS_OPTSTRING=":df:n:q:r:st:vVh" # needs to start with ':' for quiet mode
+
+OPTION_LOWER_D=false
+OPTION_LOWER_F=false
+OPTION_LOWER_N=false
+OPTION_LOWER_Q=false
+OPTION_LOWER_R=false
+OPTION_LOWER_S=false
+OPTION_LOWER_T=false
+OPTION_LOWER_V=false
+OPTION_UPPER_V=false
+OPTION_LOWER_H=false
+OPTION_LOWER_F_ARG=""
+OPTION_LOWER_N_ARG=""
+OPTION_LOWER_Q_ARG=""
+OPTION_LOWER_R_ARG=""
+OPTION_LOWER_T_ARG=""
+
+#
+# Print help (-h|-?) and version (-V) on priority
+# (will not work if given as an argument to an option requiring arguments)
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts "${GETOPTS_OPTSTRING}" CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"v")
+			OPTION_LOWER_V=true
+			;;
+		"V")
+			OPTION_UPPER_V=true
+			;;
+		"h")
+			OPTION_LOWER_H=true
+			;;
+		"?")
+			if [[ "${OPTARG}" == "?" ]]; then
+				OPTION_LOWER_H=true
+			fi
+			;;
+	esac
+done
+
+if "${OPTION_LOWER_H}"; then
+	f_Print_Help
+	exit 0
+fi
+
+if "${OPTION_UPPER_V}"; then
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	if [[ -n "${MY_VERSION_NUMBER}" && -n "${MY_VERSION_DATE}" ]]; then
+		echo "${MY_BASE_NAME} version ${MY_VERSION_NUMBER}" \
+			"(${MY_VERSION_DATE})"
+		exit 0
+	else
+		echo "ERROR: Can not find version information" \
+			"for ${MY_BASE_NAME}!" >&2
+		exit 1
+	fi
+fi
+
+#
+# Parse remaining command line options and arguments
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts "${GETOPTS_OPTSTRING}" CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"d")
+			OPTION_LOWER_D=true
+			;;
+		"f")
+			OPTION_LOWER_F=true
+			OPTION_LOWER_F_ARG="${OPTARG}"
+			;;
+		"n")
+			OPTION_LOWER_N=true
+			OPTION_LOWER_N_ARG="${OPTARG}"
+			;;
+		"q")
+			OPTION_LOWER_Q=true
+			OPTION_LOWER_Q_ARG="${OPTARG}"
+			;;
+		"r")
+			OPTION_LOWER_R=true
+			OPTION_LOWER_R_ARG="${OPTARG}"
+			;;
+		"s")
+			OPTION_LOWER_S=true
+			;;
+		"t")
+			OPTION_LOWER_T=true
+			OPTION_LOWER_T_ARG="${OPTARG}"
+			;;
+		"?")
+			echo "ERROR: Invalid option -${OPTARG} specified!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+		":")
+			echo "ERROR: Option -${OPTARG} requires an argument!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+	esac
+done
+
+#
+# Parse trailing positional parameters
+# ($OPTIND, $OPTIND+1, $OPTIND+2, ...)
+#
+
+POS_PARAM1="${@:$OPTIND:1}"
+if [[ -n "${POS_PARAM1}" ]]; then
+	# no positional parameter at all is expected
+	echo "ERROR: Parameter ${POS_PARAM1} not expected!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify mutual exclusive parameters
+#
+
+"${OPTION_LOWER_D}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+"${OPTION_LOWER_S}" && OPT_EXCLUSIVE_COUNT=${OPT_EXCLUSIVE_COUNT}+1
+if [[ "${OPT_EXCLUSIVE_COUNT}" -gt 1 ]]; then
+	echo "ERROR: Options {-d|-s} are mutually exclusive!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify required parameters are present
+#
+
+"${OPTION_LOWER_D}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+"${OPTION_LOWER_S}" && OPT_REQUIRED_COUNT=${OPT_REQUIRED_COUNT}+1
+if [[ "${OPT_REQUIRED_COUNT}" -le 0 ]]; then
+	echo "ERROR: Required option {-d|-s} missing!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+if ! "${OPTION_LOWER_N}"; then
+	echo "ERROR: Required option -n missing!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#
+# Verify dependent parameters are present and in range
+#
+
+if "${OPTION_LOWER_D}" && ! "${OPTION_LOWER_T}"; then
+	echo "ERROR: Option -d requires option -t!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+if "${OPTION_LOWER_F}" && ! "${OPTION_LOWER_D}"; then
+	echo "ERROR: Option -f requires option -d!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+if "${OPTION_LOWER_Q}" && ! "${OPTION_LOWER_S}"; then
+	echo "ERROR: Option -q requires option -s!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#------------------------------------------------------------------------------
+# Load SCU environment with global variables (e.g. DEBUG_LEVEL)
+#------------------------------------------------------------------------------
+
+f_Load_SCU_Env
+RETURN_CODE=$?
+if [[ ${RETURN_CODE} -gt 0 ]]; then
+	echo "ERROR: Failed to initialize the SCU runtime environment!" >&2
+	exit 3
+fi
+
+#
+# Adjust DEBUG_LEVEL (set in SCU_env) if verbose option was specified
+#
+
+if "${OPTION_LOWER_V}"; then
+	DEBUG_LEVEL=${DEBUG_LEVEL_DETAIL}
+fi
+
+#
+# Print details of this process
+#
+
+if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+	. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Process_Info >&2 # source into
+	echo >&2
+fi
+
+#------------------------------------------------------------------------------
+# Perform main program
+#------------------------------------------------------------------------------
+
+CAM_FILE_NAME_BASE="${OPTION_LOWER_N_ARG}"
+CAM_RES_SHORT="${OPTION_LOWER_R_ARG}" # format <WxH>
+
+# Get default resolution from SCU_env if not provided
+if [[ ! "${OPTION_LOWER_R}" || -z "${CAM_RES_SHORT}" ]]; then
+
+	if "${OPTION_LOWER_D}"; then
+
+		# Get MLU_CAMERA_DEF_VID_RES as default video resolution
+		CAM_RES_SHORT="${MLU_CAMERA_DEF_VID_RES}"
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+				"Using default video resolution from SCU_env (${CAM_RES_SHORT})"
+		fi
+
+	elif "${OPTION_LOWER_S}"; then
+
+		# Get MLU_CAMERA_DEF_IMG_RES as default image resolution
+		CAM_RES_SHORT="${MLU_CAMERA_DEF_IMG_RES}"
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+				"Using default image resolution from SCU_env (${CAM_RES_SHORT})"
+		fi
+
+	fi
+
+fi
+
+# Compact and correct CAM_RES_SHORT for processing and file name creation
+CAM_RES_SHORT=$(echo ${CAM_RES_SHORT} | \
+	sed "s/X/x/g" | sed "s/[^0-9xX]//g")
+# Convert resoluion <WxH> into params <-w W -h H> for raspivid and raspistill
+CAM_RESOLUTION=$(echo "${CAM_RES_SHORT}" | \
+	awk -F "x" '{gsub("[ \t]+", ""); print "-w "$1" -h "$2}')
+
+# Query SCU cycle number and work direktory for file name creation
+SCU_CYCLE_NUMBER="$(${SCU_HOME}/${F_BIN_SCU_CYCLE_REL})"
+WORK_DIRECTORY="$(pwd)"
+
+if "${OPTION_LOWER_D}"; then
+
+	#
+	# Record a video with the camera of the SEU
+	#
+	# MLU_camera -d -t Duration [-f fps] [-r Resolution] -n FileNameBase [-v]
+	#
+
+	typeset -i VID_DURATION_MS=0
+	VID_FPS="${OPTION_LOWER_F_ARG}" # vido frames per second [fps]
+	VID_DURATION_S=${OPTION_LOWER_T_ARG} # duration of video in [s]
+	VID_DURATION_MS=${VID_DURATION_S}*1000 # convert [s] to [ms] for raspivid
+
+	# Get MLU_CAMERA_DEF_VID_FPS from SCU_env if not provided
+	if [[ ! "${OPTION_LOWER_F}" || -z "${VID_FPS}" ]]; then
+		VID_FPS="${MLU_CAMERA_DEF_VID_FPS}"
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+				"Using default fps from SCU_env (${VID_FPS})"
+		fi
+	fi
+
+	# Use a common time stamp for file name and log entries
+	FILE_DATE="$(date +${DATE_FORMAT_SHORT})"
+
+	# FileName: YYYYMMDD_hhmmss_Cycle_FileNameBase_rRes_fFps_tDur-Seq.h264
+	# NB: To append -NNN to file name: -%03d (raspivid) <> %04d (raspistill)
+	VID_FILE_NAME="${FILE_DATE}_${SCU_CYCLE_NUMBER}_${CAM_FILE_NAME_BASE}"
+	VID_FILE_NAME="${VID_FILE_NAME}_r${CAM_RES_SHORT}"
+	VID_FILE_NAME="${VID_FILE_NAME}_f${VID_FPS}"
+	VID_FILE_NAME="${VID_FILE_NAME}_t${VID_DURATION_S}-%03d.h264"
+
+	# raspivid -w Width -h Height -fps FramesPerSecond -t Duration -o FileName
+	# Fixed parameters from SCU_env (MLU_CAMERA_FIXED_VID_ARGS):
+	#   -v -n -md 4 -awb auto -ex fixedfps -sg 10000 -pf high -lev 4.2
+	EXEC_CMD="${RASPIVID_CMD} ${CAM_RESOLUTION} -fps ${VID_FPS}"
+	EXEC_CMD="${EXEC_CMD} -t ${VID_DURATION_MS} -o ${VID_FILE_NAME}"
+	EXEC_CMD="${EXEC_CMD} ${MLU_CAMERA_FIXED_VID_ARGS}"
+
+	echo "${FILE_DATE} ${MY_FILE_NAME} Info" \
+		"Recording a video of ${VID_DURATION_S}s in directory ${WORK_DIRECTORY}"
+	echo "${FILE_DATE} ${MY_FILE_NAME} Info" \
+		"File name is ${VID_FILE_NAME}"
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Executing command: ${EXEC_CMD}"
+	fi
+
+	${EXEC_CMD}
+	RETURN_CODE=$?
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Return code: ${RETURN_CODE}"
+	fi
+
+	if [[ "${RETURN_CODE}" -eq 0 ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Info" \
+		"Successfully recorded video"
+		MY_EXIT_RC=0
+	else
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} ERROR" \
+		"Failed to record video"
+		MY_EXIT_RC=4
+	fi
+
+elif "${OPTION_LOWER_S}"; then
+
+	#
+	# Take a still image with the camera of the SEU
+	#
+	# MLU_camera -s [-q Quality] [-r Resolution] -n FileNameBase [-v]
+	#
+
+	IMG_QUALITY="${OPTION_LOWER_Q_ARG}"
+
+	# Get MLU_CAMERA_DEF_IMG_QUAL from SCU_env if not provided
+	if [[ ! "${OPTION_LOWER_Q}" || -z "${IMG_QUALITY}" ]]; then
+		IMG_QUALITY="${MLU_CAMERA_DEF_IMG_QUAL}"
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+				"Using default quality from SCU_env (${IMG_QUALITY})"
+		fi
+	fi
+
+	# Create PNG with quality 100 or JPEG with quality 0..99
+	if [[ ${IMG_QUALITY} -ge 100 ]]; then
+		IMG_FILE_TYPE="png"
+	else
+		IMG_FILE_TYPE="jpg"
+	fi
+
+	# Use a common time stamp for file name and log entries
+	FILE_DATE="$(date +${DATE_FORMAT_SHORT})"
+
+	# FileName: YYYYMMDD_hhmmss_Cycle_FileNameBase_rRes_qQua.{png|jpg}
+	# NB: To append -NNN to file name: -%03d (raspivid) <> %04d (raspistill)
+	IMG_FILE_NAME="${FILE_DATE}_${SCU_CYCLE_NUMBER}_${CAM_FILE_NAME_BASE}"
+	IMG_FILE_NAME="${IMG_FILE_NAME}_r${CAM_RES_SHORT}"
+	IMG_FILE_NAME="${IMG_FILE_NAME}_q${IMG_QUALITY}.${IMG_FILE_TYPE}"
+
+	# raspistill -w Width -h Height -q Quality -e {png|jpg} -o FileName
+	# Fixed parameters from SCU_env (MLU_CAMERA_FIXED_IMG_ARGS):
+	#   -v -n -md 4 -awb auto -t 100 -th none
+	EXEC_CMD="${RASPISTILL_CMD} ${CAM_RESOLUTION} -q ${IMG_QUALITY}"
+	EXEC_CMD="${EXEC_CMD} -e ${IMG_FILE_TYPE} -o ${IMG_FILE_NAME}"
+	EXEC_CMD="${EXEC_CMD} ${MLU_CAMERA_FIXED_IMG_ARGS}"
+
+	echo "${FILE_DATE} ${MY_FILE_NAME} Info" \
+		"Taking a still image in directory ${WORK_DIRECTORY}"
+	echo "${FILE_DATE} ${MY_FILE_NAME} Info" \
+		"File name mask is ${IMG_FILE_NAME}"
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Executing command: ${EXEC_CMD}"
+	fi
+
+	${EXEC_CMD}
+	RETURN_CODE=$?
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Debug" \
+			"Return code: ${RETURN_CODE}"
+	fi
+
+	if [[ "${RETURN_CODE}" -eq 0 ]]; then
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} Info" \
+		"Successfully took a still image"
+		MY_EXIT_RC=0
+	else
+		echo "$(date +${DATE_FORMAT_SHORT}) ${MY_FILE_NAME} ERROR" \
+		"Failed to take a still image"
+		MY_EXIT_RC=4
+	fi
+
+fi
+
+exit ${MY_EXIT_RC}
+
+###############################################################################
+# EOF
+###############################################################################
+

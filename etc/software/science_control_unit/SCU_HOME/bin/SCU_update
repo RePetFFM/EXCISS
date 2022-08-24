@@ -1,0 +1,1220 @@
+#!/bin/bash
+###############################################################################
+#
+# SCU_update
+#
+# Applies software updates from USB_X/TO_SPACE/updates directory.
+# Updates must be provided as .tgz archives with matching .md5 files.
+#
+# Needs sudo (root) for cp, mv, rm, mkdir, chown, chmod, gunzip -
+#   see ${CMD_PREFIX_SUDO}
+#
+# $LOCATION ${SCU_HOME}/bin
+#
+# $REQUIRES FILE ${SCU_HOME}/bin/USB_memory
+# $REQUIRES FILE ${SCU_HOME}/etc/SCU_env
+# $REQUIRES LIBRARY ${SCU_HOME}/lib/lib_SCU_base
+# $REQUIRES PACKAGE openssl
+#
+# $RETURNS 0 success
+# $RETURNS 1 general error
+# $RETURNS 2 invalid option or argument
+# $RETURNS 3 failed to load environment
+# $RETURNS 4 error performing requested task
+#
+# $COMPONENT_NAME MLU.SCU.SCU_boot
+# $VERSION_NUMBER 0.5.2
+# $VERSION_DATE 2018-07-27_04:22:00
+#
+## TODO ## Error handling ${SCU_HOME}/update[/done]
+## TODO ## Apply updates after SD card switch
+#
+###############################################################################
+# set -x
+unalias -a
+
+#------------------------------------------------------------------------------
+# Define global environment variables
+#------------------------------------------------------------------------------
+
+MY_START_TIME="$(date +%Y-%m-%d_%H:%M:%S)" # current time early after start
+MY_DIR_NAME="$(dirname $0)" # directory where this script is located
+MY_FILE_NAME="$(basename $0)" # file name of this script (without path)
+MY_BASE_NAME="$(basename ${MY_FILE_NAME} .sh)" # script name without ".sh"
+MY_EXEC_USER="$(whoami 2>/dev/null)" # name of user who started this script
+MY_PROCESS_ID="$(ps -fp $$ -o pid= | awk '{print $1}')" # PID of this script
+MY_PARENT_ID="$(ps -fp $$ -o ppid= | awk '{print $1}')" # PID of parent process
+MY_ARG_COUNT="$#" # number of parameters passed to this script
+MY_ARG_LIST="$@" # list of all parameters passed to this script
+WORK_DIR_NAME="$(pwd)" # current work directory of shell starting this script
+typeset -i RETURN_CODE=0 # return code of previous command (0=success)
+typeset -i MY_EXIT_RC=1 # return code of this script (0=success)(default=1)
+typeset -i OPT_EXCLUSIVE_COUNT=0 # counter for mutually exclusive options
+typeset -i OPT_REQUIRED_COUNT=0 # counter for required options
+
+F_LIB_SCU_BASE_NAME="lib_SCU_base" # library lib_SCU_base
+F_LIB_SCU_BASE_REL="lib/${F_LIB_SCU_BASE_NAME}" # relative dir
+F_ETC_SCU_ENV_FILE_NAME="SCU_env" # SCU environment file
+F_ETC_SCU_ENV_FILE_REL="etc/${F_ETC_SCU_ENV_FILE_NAME}" # relative dir
+F_BIN_USB_MEMORY_NAME="USB_memory" # binary USB_memory
+F_BIN_USB_MEMORY_REL="bin/${F_BIN_USB_MEMORY_NAME}" # relative dir
+F_SCU_UPDATE_LOG_NAME="${MY_BASE_NAME}.log" # SCU_update log file
+F_SCU_UPDATE_LOG_REL="log/${F_SCU_UPDATE_LOG_NAME}" # relative dir
+
+UPDATE_SOURCE_DIR_NAME="updates" # directory with new update files
+UPDATE_SOURCE_DIR_REL="USB_X/TO_SPACE/${UPDATE_SOURCE_DIR_NAME}" # relative dir
+UPDATE_TARGET_DIR_NAME="log" # directory with log files of updates for ground
+UPDATE_TARGET_DIR_REL="USB_X/TO_GROUND/${UPDATE_TARGET_DIR_NAME}" # rel. dir
+UPDATE_WORK_DIR_NAME="update" # directory with update files beeing processed
+UPDATE_WORK_DIR_REL="${UPDATE_WORK_DIR_NAME}" # relative dir (${SCU_HOME})
+UPDATE_WORK_DONE_DIR_NAME="done" # archived updates
+UPDATE_WORK_DONE_DIR_REL="${UPDATE_WORK_DIR_REL}/${UPDATE_WORK_DONE_DIR_NAME}"
+UPDATE_SCRIPT_BASE_NAME="update_commands.sh" # shell script with updates
+              # complete file names will be <YYYYmmd_HHMMSS>_update_commands.sh
+
+FLAG_NO_SHUTDOWN=false # no no_shutdown.flag file present
+FLAG_NO_SHUTDOWN_FILE_NAME="no_shutdown.flag" # name of flag file
+FLAG_NO_SHUTDOWN_FILE_REL="var/${FLAG_NO_SHUTDOWN_FILE_NAME}" # relative dir
+
+typeset -i FLAG_FILES_AVAILABLE=0 # number of flag files available
+typeset -i FLAG_FILES_INSTALLED=0 # number of flag files installed
+typeset -i TGZ_UPDATES_AVAILABLE=0 # number of TGZ updates available
+typeset -i TGZ_UPDATES_INSTALLED=0 # number of TGZ updates installed
+typeset -i UPDATE_SCRIPTS_AVAILABLE=0 # number of update scripts available
+typeset -i UPDATE_SCRIPTS_INSTALLED=0 # number of update scripts installed
+
+#------------------------------------------------------------------------------
+#
+# Function f_Print_Help
+#
+# Shows the usage of this script.
+# Usage: f_Print_Help
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Print_Help {
+
+	echo "Usage: ${MY_FILE_NAME} [-v][-V][-h]"
+	echo "Applies software updates from USB_X/TO_SPACE/updates directory."
+	echo
+	echo "  -v     print verbose output"
+	echo "  -V     print version of this script"
+	echo "  -h     print this help message"
+	echo
+	echo "Performs the following tasks:"
+	echo "1. Process flag files <YYYYmmd_HHMMSS>_*.flag"
+	echo "2. Apply TGZ updates <YYYYmmd_HHMMSS>_*.tgz"
+	echo "3. Execute scripts <YYYYmmd_HHMMSS>_update_commands.sh"
+	echo "4. Copy all logs of today and current cycle to USB_X/TO_GROUND/log"
+	echo
+	echo "TGZ updates must be provided as tar/gzip archives with .tgz extension"
+	echo "and must have a matching .md5 file containing its hash."
+	echo
+	echo "Example: ${MY_FILE_NAME}"
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Load_SCU_Env
+#
+# Loads the SCU environment with global variables and functions.
+# Usage: f_Load_SCU_Env
+# Returns: 0 success
+# Returns: 1 variable $SCU_HOME is undefined
+# Returns: 2 directory $SCU_HOME is invalid
+# Returns: 3 failed to load SCU environment
+#------------------------------------------------------------------------------
+
+function f_Load_SCU_Env {
+
+	if [[ -z "${SCU_HOME}" ]]; then
+
+		if "${OPTION_LOWER_V}"; then
+			echo "Warning: \${SCU_HOME} not defined in environment!" >&2
+		fi
+
+		MY_TMP_SCU_HOME="${MY_DIR_NAME}/.." # SCU_HOME may be (...)/bin/..
+		if [[ -f "${MY_TMP_SCU_HOME}/${F_ETC_SCU_ENV_FILE_REL}" ]]; then
+			SCU_HOME="${MY_TMP_SCU_HOME}" # will be overwritten from SCU_env
+		else
+			# Try to find latest (...)/etc/SCU_env file in /
+			F_ETC_SCU_ENV_FILE_NAME="$(basename ${F_ETC_SCU_ENV_FILE_REL})"
+			SCU_HOME=$(find / -type f -name "${F_ETC_SCU_ENV_FILE_NAME}" \
+				-printf "%TY%Tm%Td%TH%TM %p\n" 2>/dev/null | sort -rnk 1 | \
+				grep "/" | awk '/\/etc\// {print $2}' | head -1)
+		fi
+
+		if [[ -z "${SCU_HOME}" ]]; then
+			echo "Temporarily setting Variable SCU_HOME=${SCU_HOME}" >&2
+		fi
+
+	fi
+
+	if [[ -z "${SCU_HOME}" ]]; then
+
+		echo "ERROR: Variable SCU_HOME can not be found or constructed!" >&2
+		return 1
+
+	else
+
+		if [[ ! -e "${SCU_HOME}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: Directory SCU_HOME=${SCU_HOME} does not exist!" >&2
+			fi
+			return 2
+
+		elif [[ ! -e "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" ]]; then
+
+			if "${OPTION_LOWER_V}"; then
+				echo "ERROR: SCU_HOME=${SCU_HOME} is not a valid SCU" \
+					"installation!" >&2
+			fi
+			return 2
+
+		else
+
+			if "${OPTION_LOWER_V}"; then
+				echo "Calling library function:" \
+					"${SCU_HOME}/${F_LIB_SCU_BASE_REL} f_SCU_Load_Env" >&2
+			fi
+
+			export SCU_HOME # export current SCU_HOME for calls to libraries
+			unset SCU_ENV_VERSION_NUMBER SCU_ENV_VERSION_DATE # clear variables
+			. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Load_Env # source SCU_env
+
+			if [[ -n "${SCU_ENV_VERSION_NUMBER}" && \
+					-n "${SCU_ENV_VERSION_DATE}" ]]; then
+
+				if "${OPTION_LOWER_V}"; then
+					echo "Successfully loaded SCU environment version:" \
+						"${SCU_ENV_VERSION_NUMBER} (${SCU_ENV_VERSION_DATE})" >&2
+					echo "Using SCU_HOME=${SCU_HOME}" >&2
+					echo >&2
+				fi
+				return 0
+
+			else
+
+				if "${OPTION_LOWER_V}"; then
+					echo "ERROR: Failed to load SCU environment in" \
+						"SCU_HOME=${SCU_HOME}!" >&2
+				fi
+				return 3
+
+			fi
+
+		fi
+
+	fi
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_SCU_update_log_Header
+#
+# Prints the file header for new SCU_boot.log files.
+# Usage: f_SCU_update_log_Header
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_SCU_update_log_Header {
+
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+
+	if [[ -z "${MY_VERSION_NUMBER}" ]]; then
+		MY_VERSION_NUMBER="0.0.0"
+	fi
+	if [[ -z "${MY_VERSION_DATE}" ]]; then
+		MY_VERSION_DATE="1970-01-01_00:00:00"
+	fi
+
+	cat << 'EOF'
+###############################################################################
+#
+# SCU_update.log
+#
+# Logs software updates applied from USB_X/TO_SPACE/updates.
+#
+# $LOCATION ${SCU_HOME}/log
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_update.log
+EOF
+echo "# \$VERSION_NUMBER ${MY_VERSION_NUMBER}"
+echo "# \$VERSION_DATE ${MY_VERSION_DATE}"
+	cat << 'EOF'
+#
+###############################################################################
+EOF
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_no_shutdown_flag_Header
+#
+# Prints the file header for new no_shutdown.flag files.
+# Usage: f_no_shutdown_flag_Header
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_no_shutdown_flag_Header {
+
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+
+	if [[ -z "${MY_VERSION_NUMBER}" ]]; then
+		MY_VERSION_NUMBER="0.0.0"
+	fi
+	if [[ -z "${MY_VERSION_DATE}" ]]; then
+		MY_VERSION_DATE="1970-01-01_00:00:00"
+	fi
+
+	cat << 'EOF'
+###############################################################################
+#
+# no_shutdown.flag
+#
+# Indicates that no shutdown is desired after current mission.
+#
+# $LOCATION ${SCU_HOME}/var
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.no_shutdown.flag
+EOF
+echo "# \$VERSION_NUMBER ${MY_VERSION_NUMBER}"
+echo "# \$VERSION_DATE ${MY_VERSION_DATE}"
+	cat << 'EOF'
+#
+###############################################################################
+EOF
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_update_script_log_Header
+#
+# Prints the file header for new <YYYYmmd_HHMMSS>_update_commands.log files.
+# Usage: f_update_script_log_Header
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_update_script_log_Header {
+
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+
+	if [[ -z "${MY_VERSION_NUMBER}" ]]; then
+		MY_VERSION_NUMBER="0.0.0"
+	fi
+	if [[ -z "${MY_VERSION_DATE}" ]]; then
+		MY_VERSION_DATE="1970-01-01_00:00:00"
+	fi
+
+	cat << 'EOF'
+###############################################################################
+#
+# update_commands.log
+#
+# Log file of update_commands.sh script file from USB_X/TO_SPACE/updates.
+#
+# $LOCATION ${SCU_HOME}/log
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.update_commands.log
+EOF
+echo "# \$VERSION_NUMBER ${MY_VERSION_NUMBER}"
+echo "# \$VERSION_DATE ${MY_VERSION_DATE}"
+	cat << 'EOF'
+#
+###############################################################################
+EOF
+
+}
+
+#------------------------------------------------------------------------------
+#
+# Function f_Standard_file_Footer
+#
+# Prints the standard file footer for new files.
+# Usage: f_Standard_file_Footer
+# Returns: (none)
+#------------------------------------------------------------------------------
+
+function f_Standard_file_Footer {
+
+	cat << 'EOF'
+###############################################################################
+# EOF
+###############################################################################
+EOF
+
+}
+
+#------------------------------------------------------------------------------
+# Parse command line parameters
+#------------------------------------------------------------------------------
+
+GETOPTS_OPTSTRING=":vVh" # needs to start with ':' for quiet mode
+
+OPTION_LOWER_V=false
+OPTION_UPPER_V=false
+OPTION_LOWER_H=false
+
+#
+# Print help (-h|-?) and version (-V) on priority
+# (will not work if given as an argument to an option requiring arguments)
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts "${GETOPTS_OPTSTRING}" CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"v")
+			OPTION_LOWER_V=true
+			;;
+		"V")
+			OPTION_UPPER_V=true
+			;;
+		"h")
+			OPTION_LOWER_H=true
+			;;
+		"?")
+			if [[ "${OPTARG}" == "?" ]]; then
+				OPTION_LOWER_H=true
+			fi
+			;;
+	esac
+done
+
+if "${OPTION_LOWER_H}"; then
+	f_Print_Help
+	exit 0
+fi
+
+if "${OPTION_UPPER_V}"; then
+	MY_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	MY_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+		{print $3; exit}' ${MY_DIR_NAME}/${MY_FILE_NAME} 2>/dev/null)"
+	if [[ -n "${MY_VERSION_NUMBER}" && -n "${MY_VERSION_DATE}" ]]; then
+		echo "${MY_BASE_NAME} version ${MY_VERSION_NUMBER}" \
+			"(${MY_VERSION_DATE})"
+		exit 0
+	else
+		echo "ERROR: Can not find version information" \
+			"for ${MY_BASE_NAME}!" >&2
+		exit 1
+	fi
+fi
+
+#
+# Parse remaining command line options and arguments
+#
+
+OPTIND=1 # start with 1st command line parameter
+while getopts "${GETOPTS_OPTSTRING}" CMD_OPTION; do
+	case "${CMD_OPTION}" in
+		"?")
+			echo "ERROR: Invalid option -${OPTARG} specified!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+		":")
+			echo "ERROR: Option -${OPTARG} requires an argument!" >&2
+			echo >&2
+			f_Print_Help >&2
+			exit 2
+			;;
+	esac
+done
+
+#
+# Parse trailing positional parameters
+# ($OPTIND, $OPTIND+1, $OPTIND+2, ...)
+#
+
+POS_PARAM1="${@:$OPTIND:1}"
+if [[ -n "${POS_PARAM1}" ]]; then
+	# no positional parameter at all is expected
+	echo "ERROR: Parameter ${POS_PARAM1} not expected!" >&2
+	echo >&2
+	f_Print_Help >&2
+	exit 2
+fi
+
+#------------------------------------------------------------------------------
+# Load SCU environment with global variables (e.g. DEBUG_LEVEL)
+#------------------------------------------------------------------------------
+
+f_Load_SCU_Env
+RETURN_CODE=$?
+if [[ ${RETURN_CODE} -gt 0 ]]; then
+	echo "ERROR: Failed to initialize the SCU runtime environment!" >&2
+	exit 3
+fi
+
+#
+# Adjust DEBUG_LEVEL (set in SCU_env) if verbose option was specified
+#
+
+if "${OPTION_LOWER_V}"; then
+	DEBUG_LEVEL=${DEBUG_LEVEL_DETAIL}
+fi
+
+#
+# Print details of this process
+#
+
+if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+	. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Process_Info >&2 # source into
+	echo >&2
+fi
+
+#------------------------------------------------------------------------------
+# Initialize <YYYYmmdd_HHMMSS>_SCU_update.log
+#------------------------------------------------------------------------------
+
+START_TIME_COMPACT=$(echo ${MY_START_TIME} | awk '{gsub("-|:", ""); print}')
+LOG_DIR="$(dirname ${SCU_HOME}/${F_SCU_UPDATE_LOG_REL})"
+LOG_FILE="${LOG_DIR}/${START_TIME_COMPACT}_${F_SCU_UPDATE_LOG_NAME}"
+
+if [[ -f "${LOG_FILE}" ]]; then
+	mv "${LOG_FILE}" \
+		"${LOG_FILE}.OLD" 2>/dev/null
+fi
+
+f_SCU_update_log_Header > "${LOG_FILE}"
+
+echo >> "${LOG_FILE}"
+. "${SCU_HOME}/${F_LIB_SCU_BASE_REL}" f_SCU_Process_Info >> "${LOG_FILE}"
+
+echo >> "${LOG_FILE}"
+echo "Log file: ${LOG_FILE}" >> "${LOG_FILE}"
+
+if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+	echo "Log file: ${LOG_FILE}"
+fi
+
+#------------------------------------------------------------------------------
+# Perform main program
+#------------------------------------------------------------------------------
+
+if [[ "$(whoami)" != "root" ]]; then
+	echo >> "${LOG_FILE}"
+	echo "Warning: Not started by root, using sudo" | tee -a "${LOG_FILE}" >&2
+	CMD_PREFIX_SUDO="sudo "
+else
+	CMD_PREFIX_SUDO=""
+fi
+echo >> "${LOG_FILE}"
+
+#
+# Check prerequisites
+#
+
+UPDATE_WORK_DIR="${SCU_HOME}/${UPDATE_WORK_DIR_REL}" # update beeing processed
+UPDATE_WORK_DONE_DIR="${SCU_HOME}/${UPDATE_WORK_DONE_DIR_REL}" # archived files
+UPDATE_SOURCE_DIR="${SCU_HOME}/${UPDATE_SOURCE_DIR_REL}" # new updates to apply
+UPDATE_TARGET_DIR="${SCU_HOME}/${UPDATE_TARGET_DIR_REL}" # log files of updates
+
+# Make sure ${SCU_HOME}/update exists (for new updates to apply)
+if [[ ! -d "${UPDATE_WORK_DIR}" ]]; then
+	echo "Warning: ${UPDATE_WORK_DIR} does not exist!" | \
+		tee -a "${LOG_FILE}" >&2
+	${CMD_PREFIX_SUDO}mkdir -p "${UPDATE_WORK_DIR}" >> "${LOG_FILE}" 2>&1
+	${CMD_PREFIX_SUDO}chmod "0775" "${UPDATE_WORK_DIR}" >> "${LOG_FILE}" 2>&1
+	${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+		"${UPDATE_WORK_DIR}" >> "${LOG_FILE}" 2>&1
+	if [[ -d "${UPDATE_WORK_DIR}" ]]; then
+		echo "Successfully created ${UPDATE_WORK_DIR}" | \
+			tee -a "${LOG_FILE}"
+	else
+		echo "ERROR: Failed to create ${UPDATE_WORK_DIR}!" | \
+			tee -a "${LOG_FILE}" >&2
+	fi
+fi
+
+# Make sure ${SCU_HOME}/update/done exists (for updates already processed)
+if [[ ! -d "${UPDATE_WORK_DONE_DIR}" ]]; then
+	echo "Warning: ${UPDATE_WORK_DONE_DIR} does not exist!" | \
+		tee -a "${LOG_FILE}" >&2
+	${CMD_PREFIX_SUDO}mkdir -p "${UPDATE_WORK_DONE_DIR}" >> "${LOG_FILE}" 2>&1
+	${CMD_PREFIX_SUDO}chmod "0775" "${UPDATE_WORK_DONE_DIR}" >> "${LOG_FILE}" 2>&1
+	${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+		"${UPDATE_WORK_DONE_DIR}" >> "${LOG_FILE}" 2>&1
+	if [[ -d "${UPDATE_WORK_DONE_DIR}" ]]; then
+		echo "Successfully created ${UPDATE_WORK_DONE_DIR}" | \
+			tee -a "${LOG_FILE}"
+	else
+		echo "ERROR: Failed to create ${UPDATE_WORK_DONE_DIR}!" | \
+			tee -a "${LOG_FILE}" >&2
+	fi
+fi
+
+UPDATE_WORK_DIR="${SCU_HOME}/${UPDATE_WORK_DIR_REL}" # update beeing processed
+
+#
+# Mount USB_X to examine USB_X/TO_SPACE/updates for new updates
+#
+
+USB_X_MOUNT_STATE=$(${SCU_HOME}/${F_BIN_USB_MEMORY_REL} -d | \
+	awk -F ";" '$7=="USB_X" {print $9}')
+
+if [[ "${USB_X_MOUNT_STATE}" == *"/USB_X" ]]; then
+
+	USB_X_ALREADY_MOUNTED=true
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "USB_X already mounted on ${USB_X_MOUNT_STATE}" >&2
+	fi
+	echo "USB_X already mounted on ${USB_X_MOUNT_STATE}" >> "${LOG_FILE}"
+
+else
+
+	USB_X_ALREADY_MOUNTED=false
+
+	# Try to mount USB_X now
+	"${SCU_HOME}/${F_BIN_USB_MEMORY_REL}" -m USB_X >> "${LOG_FILE}" 2>&1
+
+	USB_X_MOUNT_STATE=$(${SCU_HOME}/${F_BIN_USB_MEMORY_REL} -d | \
+		awk -F ";" '$7=="USB_X" {print $9}')
+
+	if [[ "${USB_X_MOUNT_STATE}" == *"/USB_X" ]]; then
+		echo "Successfully mounted USB_X on ${USB_X_MOUNT_STATE}" | \
+			tee -a "${LOG_FILE}"
+	else
+		echo "ERROR: Failed to mount USB_X" | tee -a "${LOG_FILE}" >&2
+		"${SCU_HOME}/${F_BIN_USB_MEMORY_REL}" -d >> "${LOG_FILE}"
+	fi
+
+fi
+
+# Check contents of USB_X/TO_SPACE/updates directory
+if [[ -d "${UPDATE_SOURCE_DIR}" ]]; then
+	echo >>${LOG_FILE}
+	echo "Files found in ${UPDATE_SOURCE_DIR}:" >>${LOG_FILE}
+	echo >>${LOG_FILE}
+	ls -l "${UPDATE_SOURCE_DIR}/"* >>${LOG_FILE} 2>&1
+else
+	echo "Warning: ${UPDATE_SOURCE_DIR} does not exist!" | \
+		tee -a "${LOG_FILE}" >&2
+fi
+
+#
+# Process flag files if present in USB_X/TO_SPACE/updates
+#
+
+echo | tee -a ${LOG_FILE}
+echo "Checking for flag files in ${UPDATE_SOURCE_DIR}" | tee -a ${LOG_FILE}
+
+if [[ -d "${UPDATE_SOURCE_DIR}" ]]; then
+	FLAG_FILES_AVAILABLE=$(ls \
+		"${UPDATE_SOURCE_DIR}/"????????_??????_*".flag" \
+		2>/dev/null | wc -l)
+	echo "Number of flag files available: ${FLAG_FILES_AVAILABLE}"
+else
+	FLAG_FILES_AVAILABLE=0
+   echo "ERROR: Update directory is unavailable!" | tee -a ${LOG_FILE} >&2
+fi
+
+# FLAG_NO_SHUTDOWN: Look for <YYYYmmdd_HHMMSS>_no_shutdown.flag files
+VAR_FLAG_FILE="${SCU_HOME}/${FLAG_NO_SHUTDOWN_FILE_REL}" # 'real' flag file
+FLAG_NO_SHUTDOWN=false
+
+# Unconditionally delete previous flag file ${SCU_HOME}/var/no_shutdown.flag
+if [[ -f "${VAR_FLAG_FILE}" ]]; then
+	echo "Removing existing flag ${VAR_FLAG_FILE}" | \
+		tee -a ${LOG_FILE}
+	${CMD_PREFIX_SUDO}rm -f "${VAR_FLAG_FILE}" >> ${LOG_FILE} 2>&1
+fi
+
+# Process files USB_X/TO_SPACE/updates/<YYYYmmd_HHMMSS>_no_shutdown.flag
+if [[ ${FLAG_FILES_AVAILABLE} -gt 0 ]]; then
+	ls "${UPDATE_SOURCE_DIR}/"????????_??????_"${FLAG_NO_SHUTDOWN_FILE_NAME}" \
+		2> /dev/null | sort | ( while read FLAG_FILE; do
+
+		PROCESS_DATE="$(date -u +${DATE_FORMAT_SHORT})"
+		FLAG_FILE_NAME="$(basename ${FLAG_FILE})" # file name without path
+
+		echo | tee -a ${LOG_FILE}
+		echo "Processing flag file ${FLAG_FILE}"
+		echo "${PROCESS_DATE} Processing flag file ${FLAG_FILE}" >> ${LOG_FILE}
+
+		# Move flag file to ${SCU_HOME}/update for processing
+
+		WORK_FLAG_FILE="${UPDATE_WORK_DIR}/${FLAG_FILE_NAME}"
+
+		${CMD_PREFIX_SUDO}mv "${FLAG_FILE}" \
+			"${WORK_FLAG_FILE}" >> ${LOG_FILE} 2>&1
+		${CMD_PREFIX_SUDO}chmod "0664" \
+			"${UPDATE_WORK_DIRWORK_FLAG_FILE}" >> ${LOG_FILE} 2>&1
+		${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+			"${WORK_FLAG_FILE}" >> ${LOG_FILE} 2>&1
+
+		if [[ -f "${WORK_FLAG_FILE}" ]]; then
+			echo "Successfully moved ${FLAG_FILE} to" \
+				"${WORK_FLAG_FILE}" >>${LOG_FILE}
+		else
+			echo "ERROR: Failed to move ${FLAG_FILE} to" \
+				"${WORK_FLAG_FILE}" | tee -a ${LOG_FILE} >&2
+		fi
+
+		# Enable flag only if file was moved correctly
+		if [[ -f "${WORK_FLAG_FILE}" ]]; then
+
+			# Create the 'real' flag file ${SCU_HOME}/var/no_shutdown.flag
+			f_no_shutdown_flag_Header > "${VAR_FLAG_FILE}" 2>> ${LOG_FILE}
+			echo >> "${VAR_FLAG_FILE}"
+			echo "${PROCESS_DATE}" >> "${VAR_FLAG_FILE}" 2>> ${LOG_FILE}
+			echo >> "${VAR_FLAG_FILE}"
+			f_Standard_file_Footer >> "${VAR_FLAG_FILE}" 2>> ${LOG_FILE}
+			chmod "0664" "${VAR_FLAG_FILE}" 2>> ${LOG_FILE}
+			chown "${SCU_USER_UID}:${SCU_USER_GID}" "${VAR_FLAG_FILE}" \
+				2>> ${LOG_FILE}
+
+			if [[ $(egrep -v "^[ \t]*#|^[ \t]*$" "${VAR_FLAG_FILE}") == \
+				"${PROCESS_DATE}" ]]; then
+
+				FLAG_NO_SHUTDOWN=true
+				PROCESS_STATUS="APPLIED"
+				FLAG_FILES_INSTALLED=${FLAG_FILES_INSTALLED}+1
+				echo "Successfully created ${VAR_FLAG_FILE}" | \
+					tee -a ${LOG_FILE}
+				echo "Shutdown will be disabled once after this mission." | \
+					tee -a ${LOG_FILE}
+
+			else
+
+				PROCESS_STATUS="FAILED"
+				echo "ERROR: Failed to create ${VAR_FLAG_FILE}" | \
+					tee -a ${LOG_FILE} >&2
+				echo "Regular shutdown will occur after this mission." | \
+					tee -a ${LOG_FILE} >&2
+
+			fi
+
+		else
+
+			PROCESS_STATUS="FAILED"
+			echo "ERROR: Failed to process ${FLAG_FILE}" | \
+				tee -a ${LOG_FILE} >&2
+			echo "Regular shutdown will occur after this mission." | \
+				tee -a ${LOG_FILE} >&2
+
+		fi
+
+		# Archive and invalidate file regardless of result
+		FLAG_ARCHIVE_FILE_NAME="${PROCESS_DATE}_${FLAG_FILE_NAME}.${PROCESS_STATUS}"
+		FLAG_ARCHIVE_FILE="${UPDATE_WORK_DONE_DIR}/${FLAG_ARCHIVE_FILE_NAME}"
+
+		if [[ -f "${FLAG_FILE}" ]]; then
+			${CMD_PREFIX_SUDO}mv "${FLAG_FILE}" "${FLAG_ARCHIVE_FILE}" \
+				>> ${LOG_FILE} 2>&1
+		fi
+
+		if [[ -f "${WORK_FLAG_FILE}" ]]; then
+			${CMD_PREFIX_SUDO}mv "${WORK_FLAG_FILE}" \
+				"${FLAG_ARCHIVE_FILE}" >> ${LOG_FILE} 2>&1
+		fi
+
+		if [[ -r "${FLAG_ARCHIVE_FILE}" ]]; then
+			${CMD_PREFIX_SUDO}chmod "0664" "${FLAG_ARCHIVE_FILE}" \
+				>> "${LOG_FILE}" 2>&1
+			${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+				"${FLAG_ARCHIVE_FILE}" >> "${LOG_FILE}" 2>&1
+			echo "Archived flag file ${FLAG_ARCHIVE_FILE}" >>"${LOG_FILE}"
+		else
+			echo "ERROR: Failed to archive ${FLAG_ARCHIVE_FILE}!" \
+				>>"${LOG_FILE}" >&2
+		fi
+
+		# Delete flag files in case previous moves were unsuccessful
+		if ls "${FLAG_FILE}" 2> /dev/null; then
+			${CMD_PREFIX_SUDO}rm -f "${FLAG_FILE}" >> ${LOG_FILE} 2>&1
+		fi
+
+		if ls "${WORK_FLAG_FILE}" 2> /dev/null; then
+			${CMD_PREFIX_SUDO}rm -f "${WORK_FLAG_FILE}" \
+				>> ${LOG_FILE} 2>&1
+		fi
+
+	done
+	echo | tee -a ${LOG_FILE}
+	echo "Number of flag files created: ${FLAG_FILES_INSTALLED}" )
+		# ) includes ${FLAG_FILES_INSTALLED} in while loop
+fi
+
+#
+# Apply TGZ updates if present in USB_X/TO_SPACE/updates
+#
+
+echo | tee -a ${LOG_FILE}
+echo "Checking for TGZ updates in ${UPDATE_SOURCE_DIR}" | tee -a ${LOG_FILE}
+
+if [[ -d "${UPDATE_SOURCE_DIR}" ]]; then
+	TGZ_UPDATES_AVAILABLE=$(ls "${UPDATE_SOURCE_DIR}/"????????_??????_*".tgz" \
+		2>/dev/null | wc -l)
+	echo "Number of TGZ updates available: ${TGZ_UPDATES_AVAILABLE}"
+else
+	TGZ_UPDATES_AVAILABLE=0
+   echo "ERROR: Update directory is unavailable!" | tee -a ${LOG_FILE} >&2
+fi
+
+# Process updates USB_X/TO_SPACE/updates/<YYYYmmd_HHMMSS>_*.tgz
+if [[ ${TGZ_UPDATES_AVAILABLE} -gt 0 ]]; then
+	ls "${UPDATE_SOURCE_DIR}/"????????_??????_".tgz" 2> /dev/null | sort | ( \
+		while read TGZ_FILE; do
+
+		# Construct name of matching .md5 file with same base name as .tgz file
+		MD5_FILE="${UPDATE_SOURCE_DIR}/$(basename ${TGZ_FILE} \
+			.tgz 2>>${LOG_FILE}).md5"
+
+		PROCESS_DATE="$(date -u +${DATE_FORMAT_SHORT})"
+		TGZ_FILE_NAME="$(basename ${TGZ_FILE})" # file name without path
+		MD5_FILE_NAME="$(basename ${MD5_FILE})" # file name without path
+
+		echo | tee -a ${LOG_FILE}
+		echo "Processing TGZ file ${TGZ_FILE}"
+		echo "${PROCESS_DATE} Processing TGZ file ${TGZ_FILE}" >> ${LOG_FILE}
+
+		if ls "${MD5_FILE}" >/dev/null; then
+
+			echo "Update file pair found: ${TGZ_FILE_NAME} + ${MD5_FILE_NAME}" | \
+				tee -a ${LOG_FILE}
+
+			# Verify MD5 hash of TGZ file before moving the file pair
+			MD5_HASH_EXPECTED="$(cat ${MD5_FILE} 2>>${LOG_FILE} | \
+				awk '{print $NF}')"
+			MD5_HASH_REAL="$(${OPENSSL_CMD} dgst -md5 ${TGZ_FILE} \
+				2>>${LOG_FILE} | awk '{print $NF}')"
+
+			if [[ "${MD5_HASH_EXPECTED}" == "${MD5_HASH_REAL}" ]]; then
+
+				# Hash verified, move file pair to ${SCU_HOME}/update
+
+				WORK_TGZ_FILE="${UPDATE_WORK_DIR}/${TGZ_FILE_NAME}"
+
+				echo "MD5 hash verified, moving files to ${UPDATE_WORK_DIR}" | \
+					tee -a ${LOG_FILE}
+				${CMD_PREFIX_SUDO}mv "${TGZ_FILE}" \
+					"${WORK_TGZ_FILE}" >> ${LOG_FILE} 2>&1
+				${CMD_PREFIX_SUDO}chmod "0664" \
+					"${WORK_TGZ_FILE}" >> ${LOG_FILE} 2>&1
+				${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+					"${WORK_TGZ_FILE}" >> ${LOG_FILE} 2>&1
+
+				if [[ -f "${WORK_TGZ_FILE}" ]]; then
+					echo "Successfully moved ${TGZ_FILE} to" \
+						"${WORK_TGZ_FILE}" >>${LOG_FILE}
+				else
+					echo "ERROR: Failed to move ${TGZ_FILE} to" \
+						"${WORK_TGZ_FILE}" | tee -a ${LOG_FILE} >&2
+				fi
+
+				WORK_MD5_FILE="${UPDATE_WORK_DIR}/${MD5_FILE_NAME}"
+
+				${CMD_PREFIX_SUDO}mv "${MD5_FILE}" \
+					"${WORK_MD5_FILE}" >> ${LOG_FILE} 2>&1
+				${CMD_PREFIX_SUDO}chmod "0664" \
+					"${WORK_MD5_FILE}" >> ${LOG_FILE} 2>&1
+				${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+					"${WORK_MD5_FILE}" >> ${LOG_FILE} 2>&1
+
+				if [[ -f "${WORK_MD5_FILE}" ]]; then
+					echo "Successfully moved ${MD5_FILE} to" \
+						"${WORK_MD5_FILE}" >>${LOG_FILE}
+				else
+					echo "ERROR: Failed to move ${MD5_FILE} to" \
+						"${WORK_MD5_FILE}" | tee -a ${LOG_FILE} >&2
+				fi
+
+				# Test, list, and unpack (install) TGZ file
+				if ${CMD_PREFIX_SUDO}${GZIP_CMD} -t "${WORK_TGZ_FILE}"; then
+
+					cd "${SCU_HOME}" # go to ${SCU_HOME} for relative paths
+					echo "Current work directory: $(pwd)" >>${LOG_FILE}
+
+					echo >>${LOG_FILE}
+					echo "Contents of ${WORK_TGZ_FILE}" >>${LOG_FILE}
+					${CMD_PREFIX_SUDO}${GZIP_CMD} -tv "${WORK_TGZ_FILE}" \
+						>>${LOG_FILE} 2>&1
+
+					echo >>${LOG_FILE}
+					echo "Files contained in ${WORK_TGZ_FILE}" >>${LOG_FILE}
+					${CMD_PREFIX_SUDO}${GZIP_CMD} -d < "${WORK_TGZ_FILE}" | \
+						tar tvpPf - >>${LOG_FILE} 2>&1
+
+					echo >>${LOG_FILE}
+					echo "Installing ${WORK_TGZ_FILE}" >>${LOG_FILE}
+					${CMD_PREFIX_SUDO}${GZIP_CMD} -d < "${WORK_TGZ_FILE}" | \
+						tar xvpPf - >>${LOG_FILE} 2>&1
+					RETURN_CODE=$?
+
+					echo >>${LOG_FILE}
+					if [[ ${RETURN_CODE} -eq 0 ]]; then
+
+						# TGZ file was successfully extracted
+						PROCESS_STATUS="APPLIED"
+						TGZ_UPDATES_INSTALLED=${TGZ_UPDATES_INSTALLED}+1
+						echo "Successfully installed ${WORK_TGZ_FILE}" | \
+							tee -a ${LOG_FILE}
+
+					else
+
+						# TGZ file could not be extracted
+						PROCESS_STATUS="FAILED"
+						echo "ERROR: Failed to install ${WORK_TGZ_FILE}" | \
+							tee -a ${LOG_FILE} >&2
+					fi
+
+				else
+
+					# Return error as tar file failed integrity test
+					PROCESS_STATUS="ERROR"
+					echo "ERROR: TGZ archive ${WORK_TGZ_FILE} can not be" \
+						"opened" | tee -a ${LOG_FILE} >&2
+
+				fi
+
+			else
+
+				# Reject update as MD5 hash failed to verify
+				PROCESS_STATUS="REJECTED"
+
+				echo "ERROR: MD5 hashes of TGZ and MD5 file do not match" | \
+					tee -a ${LOG_FILE} >&2
+				echo "TGZ: ${MD5_HASH_REAL} MD5: ${MD5_HASH_EXPECTED}"
+
+			fi
+
+			# Archive and invalidate file pair regardless of result
+			TGZ_ARCHIVE_FILE_NAME="${PROCESS_DATE}_${TGZ_FILE_NAME}.${PROCESS_STATUS}"
+			TGZ_ARCHIVE_FILE="${UPDATE_WORK_DONE_DIR}/${TGZ_ARCHIVE_FILE_NAME}"
+
+			if [[ -f "${TGZ_FILE}" ]]; then
+				${CMD_PREFIX_SUDO}mv "${TGZ_FILE}" "${TGZ_ARCHIVE_FILE}" \
+					>> ${LOG_FILE} 2>&1
+			fi
+
+			if [[ -f "${WORK_TGZ_FILE}" ]]; then
+				${CMD_PREFIX_SUDO}mv "${WORK_TGZ_FILE}" \
+					"${TGZ_ARCHIVE_FILE}" >> ${LOG_FILE} 2>&1
+			fi
+
+			if [[ -r "${TGZ_ARCHIVE_FILE}" ]]; then
+				${CMD_PREFIX_SUDO}chmod "0664" "${TGZ_ARCHIVE_FILE}" \
+					>> "${LOG_FILE}" 2>&1
+				${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+					"${TGZ_ARCHIVE_FILE}" >> "${LOG_FILE}" 2>&1
+				echo "Archived TGZ file ${TGZ_ARCHIVE_FILE}" >>"${LOG_FILE}"
+			else
+				echo "ERROR: Failed to archive ${TGZ_ARCHIVE_FILE}!" \
+					>>"${LOG_FILE}" >&2
+			fi
+
+			MD5_ARCHIVE_FILE_NAME="${PROCESS_DATE}_${MD5_FILE_NAME}.${PROCESS_STATUS}"
+			MD5_ARCHIVE_FILE="${UPDATE_WORK_DONE_DIR}/${MD5_ARCHIVE_FILE_NAME}"
+
+			if [[ -f "${MD5_FILE}" ]]; then
+				${CMD_PREFIX_SUDO}mv "${MD5_FILE}" "${MD5_ARCHIVE_FILE}" \
+					>> ${LOG_FILE} 2>&1
+			fi
+
+			if [[ -f "${WORK_MD5_FILE}" ]]; then
+				${CMD_PREFIX_SUDO}mv "${WORK_MD5_FILE}" \
+					"${MD5_ARCHIVE_FILE}" >> ${LOG_FILE} 2>&1
+			fi
+
+			if [[ -r "${MD5_ARCHIVE_FILE}" ]]; then
+				${CMD_PREFIX_SUDO}chmod "0664" "${MD5_ARCHIVE_FILE}" \
+					>> "${LOG_FILE}" 2>&1
+				${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+					"${MD5_ARCHIVE_FILE}" >> "${LOG_FILE}" 2>&1
+				echo "Archived MD5 file ${MD5_ARCHIVE_FILE}" >>"${LOG_FILE}"
+			else
+				echo "ERROR: Failed to archive ${MD5_ARCHIVE_FILE}!" \
+					>>"${LOG_FILE}" >&2
+			fi
+
+			# Delete update files in case previous moves were unsuccessful
+			if ls "${TGZ_FILE}" 2> /dev/null; then
+				${CMD_PREFIX_SUDO}rm -f "${TGZ_FILE}" >> ${LOG_FILE} 2>&1
+			fi
+
+			if ls "${WORK_TGZ_FILE}" 2> /dev/null; then
+				${CMD_PREFIX_SUDO}rm -f "${WORK_TGZ_FILE}" \
+					>> ${LOG_FILE} 2>&1
+			fi
+
+			if ls "${MD5_FILE}" 2> /dev/null; then
+				${CMD_PREFIX_SUDO}rm -f "${MD5_FILE}" >> ${LOG_FILE} 2>&1
+			fi
+
+			if ls "${WORK_MD5_FILE}" 2> /dev/null; then
+				${CMD_PREFIX_SUDO}rm -f "${WORK_MD5_FILE}" \
+					>> ${LOG_FILE} 2>&1
+			fi
+
+		else
+
+			# Skip (keep) TGZ file since MD5 file may still turn up later
+			echo "Warning: Update ${TGZ_FILE_NAME} misses matching" \
+				"${MD5_FILE_NAME}" | tee -a ${LOG_FILE} >&2
+			echo "Skipping update file ${TGZ_FILE}" | tee -a ${LOG_FILE} >&2
+
+		fi
+
+	done
+	echo | tee -a ${LOG_FILE}
+	echo "Number of TGZ updates installed: ${TGZ_UPDATES_INSTALLED}" | \
+		tee -a ${LOG_FILE} ) # ) includes ${TGZ_UPDATES_INSTALLED} in while loop
+fi
+
+#
+# Execute update scripts if present in USB_X/TO_SPACE/updates
+#
+
+echo | tee -a ${LOG_FILE}
+echo "Checking for update scripts in ${UPDATE_SOURCE_DIR}" | tee -a ${LOG_FILE}
+
+if [[ -d "${UPDATE_SOURCE_DIR}" ]]; then
+	UPDATE_SCRIPTS_AVAILABLE=$(ls \
+		"${UPDATE_SOURCE_DIR}/"????????_??????_"${UPDATE_SCRIPT_BASE_NAME}" \
+		2>/dev/null | wc -l)
+	echo "Number of update scripts available: ${UPDATE_SCRIPTS_AVAILABLE}"
+else
+	UPDATE_SCRIPTS_AVAILABLE=0
+   echo "ERROR: Update directory is unavailable!" | tee -a ${LOG_FILE} >&2
+fi
+
+# Process scripts USB_X/TO_SPACE/updates/<YYYYmmd_HHMMSS>_update_commands.sh
+if [[ ${UPDATE_SCRIPTS_AVAILABLE} -gt 0 ]]; then
+	ls "${UPDATE_SOURCE_DIR}/"????????_??????_"${UPDATE_SCRIPT_BASE_NAME}" \
+		2> /dev/null | sort | ( while read UPDATE_SCRIPT; do
+
+		PROCESS_DATE="$(date -u +${DATE_FORMAT_SHORT})"
+		UPDATE_SCRIPT_NAME="$(basename ${UPDATE_SCRIPT})" # file without path
+
+		echo | tee -a ${LOG_FILE}
+		echo "Processing update script ${UPDATE_SCRIPT}"
+		echo "${PROCESS_DATE} Processing update script ${UPDATE_SCRIPT}" \
+			>> ${LOG_FILE}
+
+		# Move update script to ${SCU_HOME}/update for processing
+
+		WORK_UPDATE_SCRIPT="${UPDATE_WORK_DIR}/${UPDATE_SCRIPT_NAME}"
+
+		${CMD_PREFIX_SUDO}mv "${UPDATE_SCRIPT}" \
+			"${WORK_UPDATE_SCRIPT}" >> ${LOG_FILE} 2>&1
+		${CMD_PREFIX_SUDO}chmod "0754" \
+			"${WORK_UPDATE_SCRIPT}" >> ${LOG_FILE} 2>&1
+		${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+			"${WORK_UPDATE_SCRIPT}" >> ${LOG_FILE} 2>&1
+
+		if [[ -f "${WORK_UPDATE_SCRIPT}" ]]; then
+			echo "Successfully moved ${UPDATE_SCRIPT} to" \
+				"${WORK_UPDATE_SCRIPT}" >>${LOG_FILE}
+		else
+			echo "ERROR: Failed to move ${UPDATE_SCRIPT} to" \
+				"${WORK_UPDATE_SCRIPT}" | tee -a ${LOG_FILE} >&2
+		fi
+
+		# Execute update script only if file was moved correctly
+		if [[ -f "${WORK_UPDATE_SCRIPT}" ]]; then
+
+			WORK_UPDATE_SCRIPT_LOG="${LOG_DIR}/${PROCESS_DATE}_$(basename \
+				${UPDATE_SCRIPT_NAME} .sh 2>>${LOG_FILE}).log"
+			echo "Log file: ${WORK_UPDATE_SCRIPT_LOG}"
+
+			f_update_script_log_Header > "${WORK_UPDATE_SCRIPT_LOG}" \
+				2>> ${LOG_FILE}
+			echo >> "${WORK_UPDATE_SCRIPT_LOG}"
+			echo "Excuting script: ${UPDATE_SCRIPT}" | \
+				tee -a ${WORK_UPDATE_SCRIPT_LOG} >> "${LOG_FILE}"
+			echo >> "${WORK_UPDATE_SCRIPT_LOG}"
+			echo "Log file: ${WORK_UPDATE_SCRIPT_LOG}" | \
+				tee -a ${WORK_UPDATE_SCRIPT_LOG} >> "${LOG_FILE}"
+			echo >> "${WORK_UPDATE_SCRIPT_LOG}"
+			${CMD_PREFIX_SUDO}${WORK_UPDATE_SCRIPT} 2>&1 | \
+				tee -a ${WORK_UPDATE_SCRIPT_LOG} >> "${LOG_FILE}"
+			RETURN_CODE=${PIPESTATUS[0]}
+			echo >> "${WORK_UPDATE_SCRIPT_LOG}"
+			echo "Return Code: ${RETURN_CODE}" | \
+				tee -a ${WORK_UPDATE_SCRIPT_LOG} >> "${LOG_FILE}"
+			echo >> "${WORK_UPDATE_SCRIPT_LOG}"
+			f_Standard_file_Footer >> "${WORK_UPDATE_SCRIPT_LOG}" 2>> ${LOG_FILE}
+			chmod "0664" "${WORK_UPDATE_SCRIPT_LOG}" 2>> ${LOG_FILE}
+			chown "${SCU_USER_UID}:${SCU_USER_GID}" "${WORK_UPDATE_SCRIPT_LOG}" \
+				2>> ${LOG_FILE}
+
+			if [[ ${RETURN_CODE} -eq 0 ]]; then
+
+				PROCESS_STATUS="APPLIED"
+				UPDATE_SCRIPTS_INSTALLED=${UPDATE_SCRIPTS_INSTALLED}+1
+				echo "Successfully executed script ${WORK_UPDATE_SCRIPT}" | \
+					tee -a ${LOG_FILE}
+
+			else
+
+				PROCESS_STATUS="FAILED"
+				echo "ERROR: Failure executing script ${WORK_UPDATE_SCRIPT}" | \
+					tee -a ${LOG_FILE} >&2
+
+			fi
+
+		else
+
+			PROCESS_STATUS="FAILED"
+			echo "ERROR: Failed to process ${UPDATE_SCRIPT}" | \
+				tee -a ${LOG_FILE} >&2
+
+		fi
+
+		# Archive and invalidate script regardless of result
+		SCRIPT_ARCHIVE_FILE_NAME="${PROCESS_DATE}_${UPDATE_SCRIPT_NAME}.${PROCESS_STATUS}"
+		SCRIPT_ARCHIVE_FILE="${UPDATE_WORK_DONE_DIR}/${SCRIPT_ARCHIVE_FILE_NAME}"
+
+		if [[ -f "${UPDATE_SCRIPT}" ]]; then
+			${CMD_PREFIX_SUDO}mv "${UPDATE_SCRIPT}" "${SCRIPT_ARCHIVE_FILE}" \
+				>> ${LOG_FILE} 2>&1
+		fi
+
+		if [[ -f "${WORK_UPDATE_SCRIPT}" ]]; then
+			${CMD_PREFIX_SUDO}mv "${WORK_UPDATE_SCRIPT}" \
+				"${SCRIPT_ARCHIVE_FILE}" >> ${LOG_FILE} 2>&1
+		fi
+
+		if [[ -r "${SCRIPT_ARCHIVE_FILE}" ]]; then
+			${CMD_PREFIX_SUDO}chmod "0664" "${SCRIPT_ARCHIVE_FILE}" \
+				>> "${LOG_FILE}" 2>&1
+			${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+				"${SCRIPT_ARCHIVE_FILE}" >> "${LOG_FILE}" 2>&1
+			echo "Archived update script ${SCRIPT_ARCHIVE_FILE}" >>"${LOG_FILE}"
+		else
+			echo "ERROR: Failed to archive ${SCRIPT_ARCHIVE_FILE}!" \
+				>>"${LOG_FILE}" >&2
+		fi
+
+		# Delete update scripts in case previous moves were unsuccessful
+		if ls "${UPDATE_SCRIPT}" 2> /dev/null; then
+			${CMD_PREFIX_SUDO}rm -f "${UPDATE_SCRIPT}" >> ${LOG_FILE} 2>&1
+		fi
+
+		if ls "${WORK_UPDATE_SCRIPT}" 2> /dev/null; then
+			${CMD_PREFIX_SUDO}rm -f "${WORK_UPDATE_SCRIPT}" \
+				>> ${LOG_FILE} 2>&1
+		fi
+
+	done
+	echo | tee -a ${LOG_FILE}
+	echo "Number of successful update scripts: ${UPDATE_SCRIPTS_INSTALLED}" | \
+		tee -a ${LOG_FILE}) # ) includes ${UPDATE_SCRIPTS_INSTALLED} in loop
+fi
+
+#
+# Copy today's log files to USB_X/TO_GROUND/log for analysis of updates
+#
+
+# Make sure USB_X/TO_GROUND/log exists (for log files of update processes)
+if [[ ! -d "${UPDATE_TARGET_DIR}" ]]; then
+	echo | tee -a ${LOG_FILE} >&2
+	echo "Warning: ${UPDATE_TARGET_DIR} does not exist!" | \
+		tee -a "${LOG_FILE}" >&2
+	${CMD_PREFIX_SUDO}mkdir -p "${UPDATE_TARGET_DIR}" >> "${LOG_FILE}" 2>&1
+	${CMD_PREFIX_SUDO}chmod "0775" "${UPDATE_TARGET_DIR}" >> "${LOG_FILE}" 2>&1
+	${CMD_PREFIX_SUDO}chown "${SCU_USER_UID}:${SCU_USER_GID}" \
+		"${UPDATE_TARGET_DIR}" >> "${LOG_FILE}" 2>&1
+	if [[ -d "${UPDATE_TARGET_DIR}" ]]; then
+		echo "Successfully created ${UPDATE_TARGET_DIR}" | \
+			tee -a "${LOG_FILE}"
+	else
+		echo "ERROR: Failed to create ${UPDATE_TARGET_DIR}!" | \
+			tee -a "${LOG_FILE}" >&2
+	fi
+fi
+
+echo | tee -a ${LOG_FILE}
+echo "Copying today's log files from ${LOG_DIR} to ${UPDATE_TARGET_DIR}" | \
+	tee -a "${LOG_FILE}"
+echo "Warning: ${LOG_FILE} is still beeing written to!" | \
+	tee -a "${LOG_FILE}" >&2
+ls "${LOG_DIR}/$(date +%Y%m%d)_"*".log" 2>> ${LOG_FILE} | \
+		while read COPY_LOG; do
+	${CMD_PREFIX_SUDO}cp -p "${COPY_LOG}" "${UPDATE_TARGET_DIR}" | \
+		tee -a "${LOG_FILE}" 2>&1
+done
+
+#
+# Unmount USB_X if not mounted before SCU_update was started
+#
+
+if ! "${USB_X_ALREADY_MOUNTED}"; then
+
+	USB_X_MOUNT_STATE=$(${SCU_HOME}/${F_BIN_USB_MEMORY_REL} -d | \
+		awk -F ";" '$7=="USB_X" {print $9}')
+
+	if [[ "${USB_X_MOUNT_STATE}" == *"/USB_X" ]]; then
+
+		if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+			echo "Unmounting USB_X from ${USB_X_MOUNT_STATE}" >&2
+		fi
+
+		# Try to unmount USB_X now
+		"${SCU_HOME}/${F_BIN_USB_MEMORY_REL}" -u USB_X >> "${LOG_FILE}" 2>&1
+
+		USB_X_MOUNT_STATE=$(${SCU_HOME}/${F_BIN_USB_MEMORY_REL} -d | \
+			awk -F ";" '$7=="USB_X" {print $9}')
+
+		if [[ "${USB_X_MOUNT_STATE}" == "N/A" ]]; then
+			echo "Successfully unmounted USB_X from ${USB_X_MOUNT_STATE}" | \
+				tee -a "${LOG_FILE}"
+		else
+			echo "ERROR: Failed to unmount USB_X, still mounted on" \
+				"${USB_X_MOUNT_STATE}" | tee -a "${LOG_FILE}" >&2
+			"${SCU_HOME}/${F_BIN_USB_MEMORY_REL}" -d >> "${LOG_FILE}"
+		fi
+
+	fi
+
+else
+
+	if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+		echo "USB_X not unmounted from ${USB_X_MOUNT_STATE}" >&2
+	fi
+
+fi
+
+PROCESS_DATE="$(date -u +${DATE_FORMAT_SHORT})"
+echo
+echo "${MY_FILE_NAME}: Update script completed successfully" | \
+	tee -a "${LOG_FILE}"
+f_Standard_file_Footer >> "${LOG_FILE}"
+echo "Log file: ${LOG_FILE}"
+
+exit 0
+
+###############################################################################
+# EOF
+###############################################################################
+

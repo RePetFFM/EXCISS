@@ -1,0 +1,60 @@
+Test a.1
++ USB A, B, X
+- USB Kühlkörper
+- Schrauben
++ Thermalpad Flash 
++ Thermalpad Controller
++ Thermalpad Quarz
++ Thermalpad DC/DC
+- USB Kühlkörper an Gehäuse
+- Ground shield um Flash Speicher IC
+= Fehler
+
+Test a.2
++ USB A, B, X
+- USB Kühlkörper
+- Schrauben
++ Thermalpad Flash 
++ Thermalpad Controller
++ Thermalpad Quarz
++ Thermalpad DC/DC
+- USB Kühlkörper an Gehäuse
++ Ground shield um Flash Speicher IC
+= Geht
+
+Test b.1
++ USB A, B, X
++ USB Kühlkörper
++ Schrauben
+- Thermalpad Flash 
+- Thermalpad Controller
+- Thermalpad Quarz
+- Thermalpad DC/DC
++ USB Kühlkörper an Gehäuse
++ Ground shield um Flash Speicher IC
+= Fehler
+
+Test b.2
++ USB A, B, X
++ USB Kühlkörper
++ Schrauben
+- Thermalpad Flash 
+- Thermalpad Controller
+- Thermalpad Quarz
+- Thermalpad DC/DC
+- USB Kühlkörper an Gehäuse
++ Ground shield um Flash Speicher IC
+= Fehler
+
+Test b.3
++ USB A, B, X
++ USB Kühlkörper
+- Schrauben
+- Thermalpad Flash 
+- Thermalpad Controller
+- Thermalpad Quarz
+- Thermalpad DC/DC
+- USB Kühlkörper an Gehäuse
++ Ground shield um Flash Speicher IC
+= Geht
+

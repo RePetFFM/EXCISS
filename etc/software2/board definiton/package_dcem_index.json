@@ -1,0 +1,46 @@
+{
+  "packages": [
+    {
+      "name": "EXCISS Board",
+      "maintainer": "DCEM",
+      "websiteURL": "https://",
+      "email": "exciss_arduino@6xg.de",
+      "help": {
+        "online": "https://"
+      },
+      "platforms": [
+        {
+          "name": "EXCISS Board",
+          "architecture": "avr",
+          "version": "1.0.0",
+          "category": "Contributed",
+          "url": "https://github.com/",
+          "archiveFileName": "",
+          "checksum": "",
+          "size": "",
+          "help": {
+            "online": "https://"
+          },
+          "boards": [
+            {
+              "name": "EXCISS Main Control Unit"
+            }
+          ],
+          "toolsDependencies": [
+            {
+              "packager": "arduino",
+              "name": "avr-gcc",
+              "version": "4.8.1-arduino5"
+            },
+            {
+              "packager": "arduino",
+              "name": "avrdude",
+              "version": "6.0.1-arduino5"
+            }
+          ]
+        }
+    	],
+      "tools": []
+    }
+	]
+}

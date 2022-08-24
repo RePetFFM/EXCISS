@@ -1,0 +1,22 @@
+###############################################################################
+#
+# ${SCU_HOME}/var/SCU_cycle_number.cf
+#
+# Keeps track of unique SCU cycle number to identify current SCU execution.
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_cycle_number.cf
+# $VERSION_NUMBER 0.5.1
+# $VERSION_DATE 2018-03-11_23:55:00
+#
+###############################################################################
+
+SCU_CYCLE_NUMBER=10
+SCU_CYCLE_DATE=2018-05-06_21:48:20
+
+###############################################################################
+# EOF
+###############################################################################

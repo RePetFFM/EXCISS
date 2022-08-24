@@ -1,0 +1,95 @@
+/***********************************************************************
+* FILENAME :        BusMaster.cpp                  DESIGN REF: EXCISS_v4
+*
+* DESCRIPTION :
+* Wrapper for i2c and SMBus communication.
+*
+* For more information and documentation go to https://github.com/exciss-space/EXCISS
+* AUTHOR :    Shintaro Fujita
+*
+**/
+
+#include <Arduino.h>
+
+#include "BusMaster.h"
+
+
+//------------------------------------------------------------------------------------------------------------------------
+// This library required to use the SoftI2CMaster library from Bernhard Nebel and Peter Fleury.
+
+// Download and add the following library to the arduino library folder.
+// https://github.com/felias-fogg/SoftI2CMaster
+
+// SDA and SCL pin definition. Following settings are for ATMEGA2560U default I2C pin's.
+// #define SDA_PIN 1 
+// #define SDA_PORT PORTD
+// #define SCL_PIN 0
+// #define SCL_PORT PORTD
+
+
+// SDA and SCL pin definition. Following settings are for UNO default I2C pin's.
+#define SDA_PIN 4 
+#define SDA_PORT PORTC
+#define SCL_PIN 5
+#define SCL_PORT PORTC
+
+#define I2C_HARDWARE 1
+
+// Use the slowmode to raise reliability. Clock running at about 27kHz.
+#define I2C_SLOWMODE 0
+
+// Between i2c start and stop command, all interrupts are disabled to prevent smbus timeout.
+#define I2C_NOINTERRUPT  1
+
+#include <SoftI2CMaster.h>
+
+BusMaster::BusMaster() {
+	// _I2CDeviceAddress = aI2CDeviceAddress;
+}
+
+bool BusMaster::initBus() {
+	return i2c_init();
+}
+
+int BusMaster::readWord(uint8_t aI2CDeviceAddress, uint8_t aFunction) {
+	i2c_start((aI2CDeviceAddress << 1) | I2C_WRITE);
+	i2c_write(aFunction);
+	i2c_rep_start((aI2CDeviceAddress << 1) | I2C_READ);
+	uint8_t tLSB = i2c_read(false);
+	uint8_t tMSB = i2c_read(true);
+	i2c_stop();
+	return (int) tLSB | (((int) tMSB) << 8);
+}
+
+void BusMaster::writeWord(uint8_t aI2CDeviceAddress, uint8_t aFunction, uint16_t aWord) {
+	i2c_start((aI2CDeviceAddress << 1) | I2C_WRITE);
+	i2c_write(aFunction);
+	uint8_t tmpByte = (uint8_t)aWord;
+	i2c_write(tmpByte);
+	tmpByte = aWord>>8;
+	i2c_write(tmpByte);
+	i2c_stop();
+}
+
+uint8_t BusMaster::readBlock(uint8_t aI2CDeviceAddress, uint8_t aCommand, uint8_t* aDataBufferPtr, uint8_t aDataBufferLength) {
+	i2c_start((aI2CDeviceAddress << 1) + I2C_WRITE);
+	i2c_write(aCommand);
+	i2c_rep_start((aI2CDeviceAddress << 1) + I2C_READ);
+
+	// First read length of data
+	uint8_t tLengthOfData = i2c_read(false);
+	if (tLengthOfData > aDataBufferLength) {
+		tLengthOfData = aDataBufferLength;
+	}
+
+	// then read data
+	uint8_t tIndex;
+	for (tIndex = 0; tIndex < tLengthOfData - 1; tIndex++) {
+		aDataBufferPtr[tIndex] = i2c_read(false);
+	}
+	// Read last byte with "true"
+	aDataBufferPtr[tIndex++] = i2c_read(true);
+
+	i2c_stop();
+	return tLengthOfData;
+}

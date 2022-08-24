@@ -1,0 +1,107 @@
+# DO NOT USE SHEBANG HERE!
+###############################################################################
+#
+# SCU_env
+#
+# Provides global variables for the SCU program environment.
+#
+# This script is sourced into other shell scripts.
+#
+# DO NOT USE 'exit' IN THIS FILE, or the calling script will terminate!
+#
+# $LOCATION ${SCU_HOME}/etc
+#
+# $REQUIRES {none}
+#
+# $RETURNS {none}
+#
+# $COMPONENT_NAME MLU.SCU.SCU_env
+# $VERSION_NUMBER 0.5.1
+# $VERSION_DATE 2018-07-27_13:55:00
+#
+###############################################################################
+
+ENV_DIR_NAME="$(dirname ${BASH_SOURCE[0]})" # directory of this file
+ENV_FILE_NAME="$(basename ${BASH_SOURCE[0]})" # file name (without path)
+
+export SCU_ENV_VERSION_NUMBER="$(awk '$1~/^#/ && $2~/^\$VERSION_NUMBER$/ \
+	{print $3}' ${ENV_DIR_NAME}/${ENV_FILE_NAME} 2>/dev/null)"
+export SCU_ENV_VERSION_DATE="$(awk '$1~/^#/ && $2~/^\$VERSION_DATE$/ \
+	{print $3}' ${ENV_DIR_NAME}/${ENV_FILE_NAME} 2>/dev/null)"
+
+# -----------------------------------------------------------------------------
+# SCU variables
+# -----------------------------------------------------------------------------
+
+export SCU_HOME="/opt/MLU/SCU" # home directory of SCU
+export SCU_USER_UID="pi" # user name of SCU owner
+export SCU_USER_GID="pi" # group name of SCU owner
+
+export DATE_FORMAT_LONG="%Y-%m-%d_%H:%M:%S" # date format <YYYY-mm-dd_HH:MM:SS>
+export DATE_FORMAT_SHORT="%Y%m%d_%H%M%S" # date format <YYYYmmdd_HHMMSS>
+
+# -----------------------------------------------------------------------------
+# SCU configuration files
+# -----------------------------------------------------------------------------
+
+export SCU_CYCLE_FILE="${SCU_HOME}/var/SCU_cycle_number.cf"
+
+# -----------------------------------------------------------------------------
+# MLU variables for science experiments
+# -----------------------------------------------------------------------------
+
+# Variables for MLU_Camera
+export MLU_CAMERA_DEF_IMG_QUAL="100" # default image quality {0..100}
+export MLU_CAMERA_DEF_IMG_RES="1640x1232" # default image resoultion (W x H)
+export MLU_CAMERA_DEF_VID_FPS="40" # default video frames per second [fps]
+export MLU_CAMERA_DEF_VID_RES="1640x1232" # default video resoultion (W x H)
+
+MLU_CAMERA_FIXED_IMG_ARGS="-v -n -md 4 -awb auto -t 100 -th none"
+export MLU_CAMERA_FIXED_IMG_ARGS # fixed image parameters for raspistill
+
+MLU_CAMERA_FIXED_VID_ARGS="-v -n -md 4 -awb auto -ex fixedfps -sg 10000"
+MLU_CAMERA_FIXED_VID_ARGS="${MLU_CAMERA_FIXED_VID_ARGS} -pf high -lev 4.2"
+export MLU_CAMERA_FIXED_VID_ARGS # fixed video parameters for raspivid
+
+# Variables for MLU_Shaker
+export MLU_SHAKER_DEF_WAVEFORM="64,64,64,64,14,14,0,0" # default pattern
+	# for shaker Waveform (1-8x Effect separated by ",")
+	# Waveform:=[Effect[,Effect,...]]{1,8} | Effect:={0..7F} (hex)
+
+# -----------------------------------------------------------------------------
+# Debug levels
+# -----------------------------------------------------------------------------
+
+export DEBUG_LEVEL_NONE=0    # debug level 0=none
+export DEBUG_LEVEL_ERROR=1   # debug level 1=error
+export DEBUG_LEVEL_WARNING=2 # debug level 2=warning
+export DEBUG_LEVEL_INFO=3    # debug level 3=info
+export DEBUG_LEVEL_DETAIL=4  # debug level 4=detail
+export DEBUG_LEVEL=${DEBUG_LEVEL_WARNING} # debug information sent to stderr
+	# {NONE|DETAIL|INFO|WARNING|ERROR} (default: DEBUG_LEVEL_WARNING)
+
+# -----------------------------------------------------------------------------
+# Binaries from Raspbian packages
+# -----------------------------------------------------------------------------
+
+# Package gzip
+export GZIP_CMD="/bin/gzip" # binary of GNUZip needed for tgz updates
+
+# Package libraspberrypi-bin
+export RASPIVID_CMD="/usr/bin/raspivid" # binary for recording videos
+export RASPISTILL_CMD="/usr/bin/raspistill" # binary for taking images
+
+# Package openssl
+export OPENSSL_CMD="/usr/bin/openssl" # binary of OpenSSL needed for MD5 hashes
+
+# -----------------------------------------------------------------------------
+
+unset ENV_DIR_NAME
+unset ENV_FILE_NAME
+
+# DO NOT USE 'exit' ANYWHERE IN THIS FILE!
+
+###############################################################################
+# EOF
+###############################################################################
+

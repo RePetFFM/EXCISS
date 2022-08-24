@@ -1,0 +1,15 @@
+PCB test protocol
+
+Test procedure:
+
+Date / time:
+
+Testers:
+
+Test result:
+
+Issues:
+
+Serial log (serial log dump):
+
+

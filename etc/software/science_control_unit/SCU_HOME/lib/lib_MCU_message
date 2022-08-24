@@ -1,0 +1,183 @@
+#!/bin/bash
+#
+# lib_MCU_message
+#
+# Library containing MCU communications related functions
+#
+# $REQUIRES VARIABLE DEBUG_LEVEL
+#
+# UART commands
+# https://github.com/exciss-space/EXCISS/wiki/UART
+#
+# Error correction
+# https://en.wikipedia.org/wiki/Repetition_code
+#
+MY_FILE_NAME="$(basename $0)" # file name of this script (without path)
+MY_BASE_NAME="$(basename ${MY_FILE_NAME} .sh)" # script name without ".sh"
+typeset -i MY_EXIT_RC=1 # return code of this script (0=success)(default=1)
+
+SCU_HOME="/opt/MLU/SCU"
+. "${SCU_HOME}/etc/SCU_env"
+LIB_SERIAL_SEND_REL="lib/lib_MCU_serial_send"
+#LIB_SERIAL_READ_REL="lib/lib_MCU_serial_read"
+
+SERIAL_PORT_DEV="/dev/serial0"
+SERIAL_BAUD_RATE="9600"
+#SERIAL_BAUD_RATE="57600" # OLD: 9600
+
+function f_MCU_send {
+
+	#
+	# f_MCU_send { MCU_Date | Operation_Mode | LED_Back {0..255} |
+	#   LED_Front {0..255} | USB_A_Power {On|Off} | USB_B_Power {On|Off} |
+	#   USB_X_Power {On|Off} | Shaker_Pattern <index> <effect> |
+	#   Shaker_Power {On|Off} }
+	#
+
+	# MCU_Date             rdt Current RTC date, Returns [YYYY-MM-DD HH:MM:SS]
+	# TODO                 ris Ignition status, Returns {standby|charging|charged|failed}
+	# TODO                 riv Ignition capacitor voltage, Returns [V]
+	# Operation_Mode       rom Operation mode, Returns {RECOVERY|SCIENCE}
+	# TODO                 rsc Read charger status, Returns data => Charger_Status
+	# TODO                 rsg Read gauge status, Returns data => Gauge_Status
+	# TODO                 rsl System status log, Returns data => System_Status
+	# TODO                 rtl Next data transfer, Returns [s]
+	# TODO                 rus VBU status, Returns {ONLINE|OFFLINE}
+	#
+	# TODO                 wdn set datetime now Str '2017_9_16_20_14_00'
+	# TODO                 wdr set recovery datetime Str '2017_9_16_20_14_00'
+	# LED_Back {0..255}    wlb {0..255} Backlight LED
+	# LED_Front {0..255}   wlf {0..255} Frontlight LED
+	# TODO                 wsd scu sd mass storage selection 1 or 2
+	# USB_A_Power {On|Off} wua usb a mass storage power 0 (Off) or 1 (On)
+	# USB_B_Power {On|Off} wub usb b mass storage power 0 (Off) or 1 (On)
+	# USB_X_Power {On|Off} wux usb x mass storage power 0 (Off) or 1 (On)
+	#
+	# Shaker_Pattern Index Effect  wvs define vibration sequence
+	# Shaker_Power {On|Off}  evg (start) | evs (stop) vibration motor (shaker)
+	#
+	# TODO                 eia abort charging -
+	# TODO                 eii request ignition with target voltage int V
+	# TODO                 eiv arc cap charge target voltage int V
+	# TODO                 etk SCU keepalive timer int sec
+	# TODO                 etw SCU wakeup timer int sec
+
+	if [[ "$1" == "MCU_Date" ]]; then
+
+		# MCU_Date
+		# rdt
+
+		MCU_COMMAND="rdt"
+
+	elif [[ "$1" == "Operation_Mode" ]]; then
+
+		# Operation_Mode
+		# rom
+
+		MCU_COMMAND="rom"
+
+	elif [[ "$1" == "LED_Back" ]]; then
+
+		# LED_Back {0..255}
+		# wlb{0..255} (default: 0)
+
+		LED_INTENSITY="$2" # {0..255}
+		MCU_COMMAND="wlb${LED_INTENSITY}"
+
+	elif [[ "$1" == "LED_Front" ]]; then
+
+		# LED_Front {0..255}
+		# wlf{0..255} (default: 0)
+
+		LED_INTENSITY="$2" # {0..255}
+		MCU_COMMAND="wlf${LED_INTENSITY}"
+
+	elif [[ "$1" == "USB_A_Power" ]]; then
+
+		# USB_A_Power {On|Off}
+		# wua{1|0} (system default: 0)
+
+		if [[ "$2" == "On" ]]; then
+			USB_POWER_STATE="1"
+		else
+			USB_POWER_STATE="0"
+		fi
+		MCU_COMMAND="wua${USB_POWER_STATE}"
+
+	elif [[ "$1" == "USB_B_Power" ]]; then
+
+		# USB_B_Power {On|Off}
+		# wub{1|0} (system default: 0)
+
+		if [[ "$2" == "On" ]]; then
+			USB_POWER_STATE="1"
+		else
+			USB_POWER_STATE="0"
+		fi
+		MCU_COMMAND="wub${USB_POWER_STATE}"
+
+	elif [[ "$1" == "USB_X_Power" ]]; then
+
+		# USB_X_Power {On|Off}
+		# wux{1|0} (system default: 1)
+
+		if [[ "$2" == "On" ]]; then
+			USB_POWER_STATE="1"
+		else
+			USB_POWER_STATE="0"
+		fi
+		MCU_COMMAND="wux${USB_POWER_STATE}"
+
+	elif [[ "$1" == "Shaker_Pattern" ]]; then
+
+		# Shaker_Pattern <index> <effect>
+		# wvs{0..8},{0..254} (system default: 0,0)
+
+		SHAKER_PATTERN_INDEX="$2" # {0..8}
+		SHAKER_PATTERN_EFFECT="$3" # {0..254}
+		MCU_COMMAND="wvs${SHAKER_PATTERN_INDEX},${SHAKER_PATTERN_EFFECT}"
+
+	elif [[ "$1" == "Shaker_Power" ]]; then
+
+		# Shaker_Power {On|Off}
+		# {evg|evs} (system default: evs)
+
+		if [[ "$2" == "On" ]]; then
+			MCU_COMMAND="evg" # vibration motor go
+		else
+			MCU_COMMAND="evs" # vibration motor stop
+		fi
+
+	else
+
+		# Unknown / custom command
+
+		echo "Sending custom string to MCU: $@"
+		MCU_COMMAND="$@"
+
+	fi
+
+	"${SCU_HOME}/${LIB_SERIAL_SEND_REL}" \
+		-s "${SERIAL_PORT_DEV}" -b "${SERIAL_BAUD_RATE}" -c "${MCU_COMMAND}"
+	MY_EXIT_RC=0
+
+}
+
+#
+# Execute the function spcified as $1 with any arguments
+#
+
+if [[ ${DEBUG_LEVEL} -ge ${DEBUG_LEVEL_INFO} ]]; then
+	echo "Executing library function: ${MY_BASE_NAME}.$@" >&2
+fi
+
+if [[ "$1" == "f_MCU_send" ]]; then
+	$@
+fi
+
+exit ${MY_EXIT_RC}
+
+###############################################################################
+# EOF
+###############################################################################
+
